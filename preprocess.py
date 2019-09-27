@@ -47,11 +47,8 @@ def collate(collated_filename, collated_filepath, raw_filepath):
 
 # register images together, taking a stack and saving another registered stack in its place.
 def register(registered_filename, registered_filepath, raw_filename, raw_filepath):
-    # print(raw_filepath + raw_filename)
-    # print(registered_filepath + '/' + registered_filename + '.tiff')
     image_stack = imageio.volread(raw_filepath + raw_filename)
     sr = StackReg(StackReg.RIGID_BODY)
-    #registered_data = np.zeros(image_stack.shape, dtype=np.uint8)
     registered_data = sr.register_transform_stack(image_stack, reference='first', verbose=True)
     finished_file = np.uint8(registered_data)
     try:
@@ -66,18 +63,6 @@ def register(registered_filename, registered_filepath, raw_filename, raw_filepat
 # directory, which is appended to and saved to the output directory. The csvs containing the timings for each run are
 # also copied over to the output directory.
 def process_images():
-    # reading data from the files
-    # try:
-    #     #     inputdata = []
-    #     #     # with open(input_path + 'starting_positions.csv') as csvfile:
-    #     #     #     csv_in1 = csv.reader(csvfile, delimiter=',')
-    #     #     #     for row in csv_in1:
-    #     #     #         inputdata.append(row)
-    #     #     inputdata = np.loadtxt(output_path + '/starting_positions.csv', dtype=str, delimiter=',', skiprows=1)
-    #     # 
-    #     # except:
-    #     #     print('starting_positions.csv not found, ensure it is in the target folder')
-
     f = Figlet(font='isometric1')
     print f.renderText('Ferg')
     time.sleep(1)

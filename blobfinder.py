@@ -14,8 +14,10 @@ import re
 
 movement_threshold = 2
 vimba_scale_factor = 0.4975
-n_glass = 1.5
-n_water = 1.33
+offset_x = 1294
+offset_y = 970
+n_glass = 1.474
+n_water = 1.333
 
 
 def centercrop(image, cropsize):
@@ -42,7 +44,9 @@ def findblob(image, sigma):
     pb = np.polyfit(xb, yb, 2)
     ainterp = -pa[1] / (2 * pa[0])
     binterp = -pb[1] / (2 * pb[0])
-    return [ainterp, binterp]
+    x_shift_scale = (ainterp - offset_x) * vimba_scale_factor
+    y_shift_scale = (binterp - offset_y) * vimba_scale_factor
+    return [x_shift_scale, y_shift_scale]
 
 
 def computestrain(position_stack, force_stack, i):
@@ -115,14 +119,6 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
         image = centercrop(image_stack[i, :, :], cropsize)
         image = median_filter(image, size=2)
         image = adjust_gamma(image, gamma=gamma_adjust)
-        # try:
-        #     thresh = threshold_minimum(image)
-        # except RuntimeError:
-        #     print('gamma adjustment altered')
-        #     image = centercrop(image_stack[i, :, :], cropsize)
-        #     image = median_filter(image, size=2)
-        #     image = adjust_gamma(image, gamma=gamma_adjust*2)
-        #     thresh = threshold_minimum(image)
 
         thresh = threshold_sauvola(image, window_size=45)
         image_thresh = image > thresh
@@ -168,14 +164,14 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
         # and the force magnitude
         ax3.cla()
         ax3.set_xlim([0, time_stack[length - 1]])
-        if any(vimba_scale_factor * dotted_distance_stack[0:i] > 18):
-            ax3.set_ylim([-5, 1.1*np.amax(vimba_scale_factor * dotted_distance_stack[0:i])])
+        if any(dotted_distance_stack[0:i] > 18):
+            ax3.set_ylim([-5, 1.1*np.amax(dotted_distance_stack[0:i])])
         else:
             ax3.set_ylim([-5, 20])
 
-        distance_along, = ax3.plot(time_stack[0:i], vimba_scale_factor * dotted_distance_stack[0:i], color='blue',
+        distance_along, = ax3.plot(time_stack[0:i], dotted_distance_stack[0:i], color='blue',
                                    linewidth=2, label='distance along force vector')
-        distance_residual, = ax3.plot(time_stack[0:i], vimba_scale_factor * orthogonal_distance_stack[0:i],
+        distance_residual, = ax3.plot(time_stack[0:i], orthogonal_distance_stack[0:i],
                                       color='orange', linewidth=2, label='distance residual')
 
         ax3.set_ylabel('Bead Displacement/um')
@@ -206,7 +202,6 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
     dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack = computestrain(position_stack,
                                                                                             force_data[0], length)
     force_magnitude_stack = np.multiply(force_magnitude_stack, force_mask)
-    scaled_position_stack = vimba_scale_factor * dotted_distance_stack
 
-    return [time_stack, scaled_position_stack, force_magnitude_stack]
+    return [time_stack, dotted_distance_stack, force_magnitude_stack]
 
