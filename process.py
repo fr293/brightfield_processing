@@ -45,7 +45,7 @@ file_list = file_array.tolist()
 print('please select the file that you want the processed data to be saved in:')
 
 root.directory = tkFileDialog.askdirectory(
-    initialdir='C:/Users/fr293/Dropbox (Cambridge University)/Cambs/PhD/Experiments/processed_vesicles',
+    initialdir='G:/Shared drives/Team Backup',
     title='Select Output Directory')
 output_folder = root.directory + '/'
 
@@ -66,13 +66,17 @@ for experiment_run in file_list:
     print('analysing experiment: ' + filename)
 
     try:
-        [time_stack, scaled_position_stack, force_stack] = b.findblobstack(filename + '_r', input_folder, output_folder,
-                                                                        ca, cc, cropsize, blobsize,
-                                                                        gamma_threshold_adjust)
+        [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std, force_mask] =\
+            b.findblobstack(filename + '_r', input_folder, output_folder, ca, cc, cropsize, blobsize,
+                            gamma_threshold_adjust)
     except IOError:
         print('error: experimental time data not found')
 
-    exp_data = np.hstack([time_stack, scaled_position_stack, force_stack])
+    exp_data = np.hstack([time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std,
+                          force_mask])
 
     np.savetxt(output_folder + experiment_run[0] + '.csv', exp_data, delimiter=',',
-               header='time/s,distance/um,force/nN')
+               header='time/s,position x/um,position y/um,position z/um,distance along force vector/um,'
+                      'x mean force estimate/nN,y mean force estimate/nN,z mean force estimate/nN,'
+                      'x std dev force estimate/nN,y std dev force estimate/nN,z std dev force estimate/nN,'
+                      'force on/off')

@@ -87,8 +87,8 @@ def prediction(location_array, gpx, gpy, gpz):
     my = np.array(gpy.predict(location_array, return_std=True), ndmin=2).T
     mz = np.array(gpz.predict(location_array, return_std=True), ndmin=2).T
 
-    magnitudes = np.concatenate((mx[:, 0], my[:, 0], mz[:, 0]), axis=1)
-    deviations = np.concatenate((mx[:, 1], my[:, 1], mz[:, 1]), axis=1)
+    magnitudes = np.column_stack((mx[:, 0], my[:, 0], mz[:, 0]))
+    deviations = np.column_stack((mx[:, 1], my[:, 1], mz[:, 1]))
 
     return [magnitudes, deviations]
 
