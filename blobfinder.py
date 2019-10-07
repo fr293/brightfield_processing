@@ -159,7 +159,7 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
         im_x = int((a/vimba_scale_factor) + offset_x)
         im_y = int((b/vimba_scale_factor) + offset_y)
         circ = Circle((im_x, im_y), sigma, color='red', linewidth=2, fill=False)
-        arrow = Arrow(a, b, 100 * force_stack[i, 0], 100 * force_stack[i, 1], width=30, color='black')
+        arrow = Arrow(im_x, im_y, 100 * force_stack[i, 0], 100 * force_stack[i, 1], width=30, color='black')
         ax2.add_patch(circ)
         if force_on:
             ax2.add_patch(arrow)
@@ -185,13 +185,15 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
 
         ax4.cla()
         ax4.set_title('Bead Displacement and Force Magnitude')
-        ax4.set_xlim([0, time_stack[length - 1]])
-        ax4.set_ylim([0, 10])
-        force_magnitude, = ax4.plot(time_stack[0:i], force_magnitude_stack[0:i], color='red', linewidth=2)
+        #ax4.set_xlim([0, time_stack[length - 1]])
+        #ax4.set_ylim([0, 10])
+        #force_magnitude, = ax4.plot(time_stack[0:i], force_magnitude_stack[0:i], color='red', linewidth=2)
         ax4.set_xlabel('Time/s')
-        ax4.set_ylabel('Force Magnitude/nN')
-        ax4.legend([distance_along, distance_residual, force_magnitude],
-                   ['distance along', 'distance residual', 'force magnitude'])
+        #ax4.set_ylabel('Force Magnitude/nN')
+        # ax4.legend([distance_along, distance_residual, force_magnitude],
+        #            ['distance along', 'distance residual', 'force magnitude'])
+        ax4.legend([distance_along, distance_residual,],
+                   ['distance along', 'distance residual'])
 
         plt.draw()
         plt.pause(0.01)
