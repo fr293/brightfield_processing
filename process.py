@@ -66,6 +66,7 @@ print('success: starting analysis')
 for experiment_run in file_list:
     # extract current configurations
     [filename, ca, cc, fon, fdur, num_frames, frame_period, temp] = experiment_run
+    filename = str(filename.replace('"', ''))
     if exists(input_folder + filename + '_r.tiff'):
         print('experiment ' + filename + ' registered, proceeding to analysis')
     else:
