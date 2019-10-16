@@ -1,80 +1,66 @@
 import numpy as np
-from pyfiglet import Figlet
 import time
-from scipy import interpolate
-from Tkinter import *
-import tkFileDialog
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set(font_scale=1.5, rc={'text.usetex': True, 'font.family': 'serif', 'font.serif': 'cm'})
-sns.set_context("talk")
-sns.set_style('darkgrid')
-
-experimental_period = 0.5
-resample_value = 500
-
-f = Figlet(font='isometric1')
-print f.renderText('Ferg')
-time.sleep(1)
-g = Figlet(font='isometric3')
-print g.renderText('Labs')
-time.sleep(1)
-
-plot_info = ['sampletrace_1', ["G:\\Shared drives\\Team Backup\\Vesicles Fergus' data\\compaction_experiments\\D_series\\D1\\D1_W_1A_90.csv", 0, 4],
-             ["G:\\Shared drives\\Team Backup\\Vesicles Fergus' data\\compaction_experiments\\D_series\\D1\\D1_E_1A_90.csv", 0, 4]]
-
-# print('Welcome to the brightfield bead tracking and processing tool.')
-# time.sleep(0.5)
-# print('Please select the folder containing your data ready for analysis:')
-#
-# root = Tk()
-# root.attributes("-topmost", True)
-# root.directory = tkFileDialog.askdirectory()
-# input_folder = root.directory + '/'
-#
-# print('please select the file that contains details of the data to be processed:')
-#
-# root.filename = tkFileDialog.askopenfilename(initialdir='C:/', title='Select file',
-#                                              filetypes=(('csv files', '*.csv'), ('all files', '*.*')))
-#
-# fig, axes = plt.subplots(2, 2)
-
-# read in the datasets to be plotted
-
-# generate a window with checkboxes for all of the data series
-
-# choose which series should be plotted
-
-# choose the data from the series to plot
-
-# press the plot button to generate a graph
-
-# load in data
-# extract series name
-series_name = plot_info[0]
-plot_info = plot_info[1:]
-
-# append data to each sublist
-for info in plot_info:
-    filename, x_data, y_data = info
-    extract = np.genfromtxt(filename, dtype=np.float, skip_header=1, delimiter=',',
-                       encoding=None, usecols=(x_data, y_data))
-    info.append(extract)
-
-# assuming x points are reasonably comparable, concatenate y information
-
-for info in plot_info:
 
 
+def read_data(filepath):
+    data = np.genfromtxt(filepath, dtype=float, delimiter=',')
+    exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, \
+        x_std_dev_force, y_std_dev_force, z_std_dev_force, force_on = data.T
 
-# create plot
+    return exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, \
+        x_std_dev_force, y_std_dev_force, z_std_dev_force, force_on
 
-fig = plt.figure()
 
-#take in
-xnew = np.linspace(0, (experimental_period * x.size) - 1, resample_value)
+def force_switch_indices(force_on_vector):
+    indices = np.argwhere(force_on_vector)
+    start_index = indices[0] - 1
+    end_index = indices[-1] + 1
+    return start_index, end_index
 
-def resample(x, y, xnew):
-    f_interp = interpolate.interp1d(x,y)
-    ynew = f_interp(xnew)
-    return ynew
+
+def terminal_viscosity(start_index, end_index, exp_time, displacement):
+    x_data = exp_time[int(start_index):int(end_index)]
+    y_data = displacement[int(start_index):int(end_index)]
+    index_range = np.round(0.33 * (end_index - start_index))
+    x_data_fluid = exp_time[int(end_index-index_range):int(end_index)]
+    y_data_fluid = displacement[int(end_index-index_range):int(end_index)]
+    p = np.polyfit(x_data_fluid, y_data_fluid, 1)
+    lin_flow = np.polyval(p, x_data_fluid)
+    error = np.absolute(y_data_fluid - lin_flow)
+    peak = peak_displacement(start_index, end_index, displacement)
+    scaled_error = (error/peak)*100
+    p_error = np.polyfit(range(scaled_error.size), scaled_error, 1)
+    error_index = (10-p_error[1])/p_error[0]
+    p_time = np.polyfit(range(x_data_fluid.size), x_data_fluid, 1)
+    transition_time = np.polyval(p_time, error_index)
+    t_creep = transition_time - x_data[0]
+    d_fluid = p[0] * (x_data[-1] - x_data[0])
+    return t_creep, p[0], peak, d_fluid
+
+
+def peak_displacement(start_index, end_index, displacement):
+    index_range = np.round(0.17 * (end_index - start_index))
+    y_data = displacement[int(end_index - index_range):int(end_index + index_range)]
+    peak_val = y_data.max()
+    return peak_val
+
+
+def terminal_displacement(displacement):
+    index_range = int(round(0.1*displacement.size))
+    y_data = displacement[-index_range:-1]
+    mean = np.mean(y_data)
+    return mean
+
+
+def full_analysis(filepath):
+    exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, \
+        x_std_dev_force, y_std_dev_force, z_std_dev_force, force_on = read_data(filepath)
+
+    start_index, end_index = force_switch_indices(force_on)
+
+    creep_time, creep_viscosity, peak_deformation, viscous_displacement = \
+        terminal_viscosity(start_index, end_index, exp_time, displacement)
+
+    residual_deformation = terminal_displacement(displacement)
+
+    return viscous_displacement, creep_viscosity, creep_time, residual_deformation, peak_deformation

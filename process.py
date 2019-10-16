@@ -1,3 +1,4 @@
+import analyse as a
 import blobfinder as b
 import numpy as np
 from pyfiglet import Figlet
@@ -8,7 +9,8 @@ from Tkinter import *
 import tkFileDialog
 import preprocess as pre
 from os.path import exists
-
+from shutil import copy
+import csv
 
 cropsize = 1900
 blobsize = 40
@@ -34,8 +36,8 @@ input_folder = root.directory + '/'
 print('please select the file that contains details of the data to be processed:')
 
 root.filename = tkFileDialog.askopenfilename(
-    initialdir='C:/Users/fr293/Dropbox (Cambridge University)/Cambs/PhD/Experiments/processed_vesicles',
-    title='Select Experiment file', filetypes=(('csv files', '*.csv'), ('all files', '*.*')))
+    initialdir=input_folder, title='Select Experiment file',
+    filetypes=(('csv files', '*.csv'), ('all files', '*.*')))
 
 # check that all the files mentioned in the input data file exist. If not, then raise a warning and possibly halt
 
@@ -48,6 +50,17 @@ root.directory = tkFileDialog.askdirectory(
     initialdir='G:/Shared drives/Team Backup',
     title='Select Output Directory')
 output_folder = root.directory + '/'
+
+# copy the experimental file over
+copy(root.filename, output_folder)
+
+with open(output_folder + 'experiment_analysis.csv', 'wb') as f:
+    writer = csv.writer(f)
+    writer.writerow(['run name', 'viscous displacement', 'creep viscosity',
+                     'creep time', 'residual deformation', 'peak deformation'])
+# np.savetxt(output_folder + 'experiment_analysis.csv', ['run name', 'viscous displacement', 'creep viscosity',
+#                                                       'creep time', 'residual deformation', 'peak deformation'],
+#            fmt='%s', delimiter=',')
 
 print('success: starting analysis')
 for experiment_run in file_list:
@@ -80,3 +93,22 @@ for experiment_run in file_list:
                       'x mean force estimate/nN,y mean force estimate/nN,z mean force estimate/nN,'
                       'x std dev force estimate/nN,y std dev force estimate/nN,z std dev force estimate/nN,'
                       'force on/off')
+
+    print('postprocessing experiment: ' + filename)
+
+    try:
+        analysed_data = a.full_analysis(output_folder + experiment_run[0] + '.csv')
+
+        analysed_data = [experiment_run[0]] + list(analysed_data)
+
+        with open(output_folder + 'experiment_analysis.csv', 'ab') as f:
+            writer = csv.writer(f)
+            writer.writerow(analysed_data)
+
+    except IndexError:
+        print('error: not able to extract force data')
+        error_message = [experiment_run[0]] + ['warning', 'no', 'data', 'available', '!']
+
+        with open(output_folder + 'experiment_analysis.csv', 'ab') as f:
+            writer = csv.writer(f)
+            writer.writerow(error_message)
