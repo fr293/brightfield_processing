@@ -16,7 +16,8 @@ import os
 import numpy as np
 from sklearn import gaussian_process
 from sklearn.externals import joblib
-from timeit import default_timer as timer
+from sklearn.linear_model import LinearRegression
+import time
 
 
 maxlength = 20000
@@ -51,25 +52,37 @@ def gp_model(path, filename, no):
 
     data_list = training_data(os.path.join(path_str, name))
 
-    kernel = gaussian_process.kernels.RBF(length_scale=1, length_scale_bounds=(1e-2, 1000.0))
+    kernel_x_rbf = gaussian_process.kernels.RBF(length_scale=42.0, length_scale_bounds=(40.0, 500.0))
+    kernel_y_rbf = gaussian_process.kernels.RBF(length_scale=42.0, length_scale_bounds=(40.0, 500.0))
+    kernel_z_rbf = gaussian_process.kernels.RBF(length_scale=42.0, length_scale_bounds=(40.0, 500.0))
+
     print 'fitting x'
-    start = timer()
-    gpx = gaussian_process.GaussianProcessRegressor(kernel=kernel, alpha=0.1).fit(data_list[0], data_list[1])
-    end = timer()
+    start = time.time()
+    gpx = gaussian_process.GaussianProcessRegressor(kernel=kernel_x, alpha=0.1, normalize_y=True).\
+        fit(data_list[0], data_list[1])
+    end = time.time()
     clock = end - start
-    print ('elapsed time: ' + clock)
+    print ('elapsed time: ' + str(clock))
+    print ('x trained width:')
+    print (np.exp(kernel_x.theta))
     print 'fitting y'
-    start = timer()
-    gpy = gaussian_process.GaussianProcessRegressor(kernel=kernel, alpha=0.1).fit(data_list[0], data_list[2])
-    end = timer()
+    start = time.time()
+    gpy = gaussian_process.GaussianProcessRegressor(kernel=kernel_y, alpha=0.1, normalize_y=True).\
+        fit(data_list[0], data_list[2])
+    end = time.time()
     clock = end - start
-    print ('elapsed time: ' + clock)
+    print ('elapsed time: ' + str(clock))
+    print ('y trained width:')
+    print (np.exp(kernel_y.theta))
     print 'fitting z'
-    start = timer()
-    gpz = gaussian_process.GaussianProcessRegressor(kernel=kernel, alpha=0.1).fit(data_list[0], data_list[3])
-    end = timer()
+    start = time.time()
+    gpz = gaussian_process.GaussianProcessRegressor(kernel=kernel_z, alpha=0.1, normalize_y=True).\
+        fit(data_list[0], data_list[3])
+    end = time.time()
     clock = end - start
-    print ('elapsed time: ' + clock)
+    print ('elapsed time: ' + str(clock))
+    print ('z trained width:')
+    print (np.exp(kernel_z.theta))
     print 'regression finished, saving models'
 
     # save the model into pkl files
@@ -99,8 +112,25 @@ def sweep_load(ca, cc):
 
     print('loading force data...')
     print('loading: config ' + str(cc) + ', amplitude ' + str(ca))
-    predictor_array_x = joblib.load('D://sweep_data/' + str(ca) + '/gp_train_data/config' + str(cc) + 'x.pkl')
-    predictor_array_y = joblib.load('D://sweep_data/' + str(ca) + '/gp_train_data/config' + str(cc) + 'y.pkl')
-    predictor_array_z = joblib.load('D://sweep_data/' + str(ca) + '/gp_train_data/config' + str(cc) + 'z.pkl')
+    predictor_array_x = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data/config' + str(cc) + 'x.pkl')
+    predictor_array_y = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data/config' + str(cc) + 'y.pkl')
+    predictor_array_z = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data/config' + str(cc) + 'z.pkl')
 
     return predictor_array_x, predictor_array_y, predictor_array_z
+
+def plot_map(ca):
+    # ca is the current magnitude index, going from 1-9
+
+    map = np.mgrid[-400:420:20, -400:420:20, 0:1]
+    map = map.reshape(3, -1).T
+
+    directions = [3, 2, 4, 1]
+
+    for direction in directions:
+        predictor_array_x, predictor_array_y, predictor_array_z = sweep_load(ca, direction)
+        magnitudes, deviations = prediction(map, predictor_array_x, predictor_array_y, predictor_array_z)
+
+        magnitudes = magnitudes.reshape(41,41, order='F')
+        mag_image = np.rot90(magnitudes)
+
+
