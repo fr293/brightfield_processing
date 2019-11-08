@@ -77,6 +77,8 @@ for experiment_run in file_list:
             print('error: experimental image data not found')
             continue
 
+    #user_input = raw_input('Process ')
+
     print('analysing experiment: ' + filename)
 
     try:

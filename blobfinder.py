@@ -201,11 +201,13 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
     plt.savefig(output_filepath + image_filename + '.jpeg')
     plt.close(fig)
 
-    predictor_array_x, predictor_array_y, predictor_array_z = f.sweep_load(ca, cc)
+    predictor_array_x, predictor_array_y, predictor_array_z, lin_model_x, lin_model_y, lin_model_z\
+        = f.sweep_load(ca, cc)
 
     position_stack[:, 2] = z_actual
 
-    force_data = f.prediction(position_stack, predictor_array_x, predictor_array_y, predictor_array_z)
+    force_data = f.prediction(position_stack, predictor_array_x, predictor_array_y, predictor_array_z,
+                              lin_model_x, lin_model_y, lin_model_z)
 
     dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack = computestrain(position_stack,
                                                                                             force_data[0])
