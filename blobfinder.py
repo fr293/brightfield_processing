@@ -44,8 +44,11 @@ def findblob(image, sigma):
     pb = np.polyfit(xb, yb, 2)
     ainterp = -pa[1] / (2 * pa[0])
     binterp = -pb[1] / (2 * pb[0])
-    x_shift_scale = (ainterp - offset_x) * vimba_scale_factor
-    y_shift_scale = (binterp - offset_y) * vimba_scale_factor
+    # this assumes that the cropped image center is the same as the original image center
+    imagesize = image.shape
+    offset = imagesize[0]/2
+    x_shift_scale = (ainterp - offset) * vimba_scale_factor
+    y_shift_scale = (binterp - offset) * vimba_scale_factor
     return [x_shift_scale, y_shift_scale]
 
 
@@ -156,15 +159,17 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
         ax2.axis('off')
         ax2.set_aspect('equal')
         (a, b, c) = position_stack[i, :]
-        im_x = int((a/vimba_scale_factor) + offset_x)
-        im_y = int((b/vimba_scale_factor) + offset_y)
+        imagesize = image.shape
+        offset = imagesize[0] / 2
+        im_x = int((a/vimba_scale_factor) + offset)
+        im_y = int((b/vimba_scale_factor) + offset)
         circ = Circle((im_x, im_y), sigma, color='red', linewidth=2, fill=False)
         arrow = Arrow(im_x, im_y, 100 * force_stack[i, 0], 100 * force_stack[i, 1], width=30, color='black')
         ax2.add_patch(circ)
         if force_on:
             ax2.add_patch(arrow)
-        ax2.scatter(x=(position_stack[0:i, 0]/vimba_scale_factor) + offset_x,
-                    y=position_stack[0:i, 1]/vimba_scale_factor + offset_y, c='g', s=10)
+        ax2.scatter(x=(position_stack[0:i, 0]/vimba_scale_factor) + offset,
+                    y=position_stack[0:i, 1]/vimba_scale_factor + offset, c='g', s=10)
 
         # this axis plots the strain in the direction of the force, the strain normal to the force
         # and the force magnitude
@@ -206,7 +211,7 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
 
     position_stack[:, 2] = z_actual
 
-    force_data = f.prediction(position_stack, predictor_array_x, predictor_array_y, predictor_array_z,
+    force_data = f.lin_prediction(position_stack, predictor_array_x, predictor_array_y, predictor_array_z,
                               lin_model_x, lin_model_y, lin_model_z)
 
     dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack = computestrain(position_stack,
