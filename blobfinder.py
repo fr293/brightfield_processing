@@ -14,12 +14,19 @@ import GP_force_predictor as f
 import re
 
 resize_factor = 2
+threshold_size = 23
+hole_threshold_area = 2000
+object_threshold_area = 4000
 movement_threshold = 2
 vimba_scale_factor = 0.4975
 offset_x = 1294
 offset_y = 970
 n_glass = 1.474
 n_water = 1.333
+
+
+def round_odd(number):
+    return 2*np.floor(number/2)+1
 
 
 def centercrop(image, cropsize):
@@ -50,7 +57,6 @@ def findblob(image, blobsize):
     pb = np.polyfit(xb, yb, 2)
     ainterp = -pa[1] / (2 * pa[0])
     binterp = -pb[1] / (2 * pb[0])
-    #test comment
     # this assumes that the cropped image center is the same as the original image center
     imagesize = image.shape
     offset = imagesize[0]/2
@@ -120,12 +126,12 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
         image = resize(image, [cropsize/resize_factor, cropsize/resize_factor], anti_aliasing=True, mode='reflect')
         image = median_filter(image, size=2)
         image = adjust_gamma(image, gamma=gamma_adjust)
-        thresh = threshold_sauvola(image, window_size=23)
+        thresh = threshold_sauvola(image, window_size=round_odd(threshold_size/resize_factor))
         image_thresh = image > thresh
-        remove_small_holes(image_thresh, area_threshold=500, in_place=True)
-        remove_small_objects(image_thresh, min_size=1000, in_place=True)
-        x, y = findblob(image_thresh, blobsize/2)
-        position_stack[i, 0:2] = np.array([x, y])*vimba_scale_factor*2
+        remove_small_holes(image_thresh, area_threshold=np.floor(hole_threshold_area/resize_factor**2), in_place=True)
+        remove_small_objects(image_thresh, min_size=np.floor(object_threshold_area/resize_factor**2), in_place=True)
+        x, y = findblob(image_thresh, blobsize/resize_factor)
+        position_stack[i, 0:2] = np.array([x, y])*vimba_scale_factor*resize_factor
 
     position_stack[:, 2] = z_actual
 
