@@ -50,6 +50,7 @@ def findblob(image, blobsize):
     pb = np.polyfit(xb, yb, 2)
     ainterp = -pa[1] / (2 * pa[0])
     binterp = -pb[1] / (2 * pb[0])
+    #test comment
     # this assumes that the cropped image center is the same as the original image center
     imagesize = image.shape
     offset = imagesize[0]/2
