@@ -14,7 +14,7 @@ import csv
 
 cropsize = 1900
 blobsize = 40
-gamma_threshold_adjust = 0.65
+gamma_adjust = 0.75
 
 f = Figlet(font='isometric1')
 print f.renderText('Ferg')
@@ -67,7 +67,17 @@ for experiment_run in file_list:
     # extract current configurations
     [filename, ca, cc, fon, fdur, num_frames, frame_period, temp] = experiment_run
     filename = str(filename.replace('"', ''))
-    if exists(input_folder + filename + '_r.tiff'):
+    # if exists(input_folder + filename + '_r.tiff'):
+    #     print('experiment ' + filename + ' registered, proceeding to analysis')
+    # else:
+    #     print('preprocessing experiment: ' + filename)
+    #     try:
+    #         pre.register(filename + '_r.tiff', input_folder, filename + '.tiff', input_folder)
+    #     except IOError:
+    #         print('error: experimental image data not found')
+    #         continue
+
+    if exists(input_folder + filename + '.tiff'):
         print('experiment ' + filename + ' registered, proceeding to analysis')
     else:
         print('preprocessing experiment: ' + filename)
@@ -81,17 +91,24 @@ for experiment_run in file_list:
 
     print('analysing experiment: ' + filename)
 
+    # try:
+    #     [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std, force_mask] =\
+    #         b.findblobstack(filename + '_r', input_folder, output_folder, ca, cc, cropsize, blobsize,
+    #                         gamma_adjust)
+    # except IOError:
+    #     print('error: experimental time data not found')
+
     try:
         [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std, force_mask] =\
-            b.findblobstack(filename + '_r', input_folder, output_folder, ca, cc, cropsize, blobsize,
-                            gamma_threshold_adjust)
+            b.findblobstack(filename, input_folder, output_folder, ca, cc, cropsize, blobsize,
+                            gamma_adjust)
     except IOError:
         print('error: experimental time data not found')
 
     exp_data = np.hstack([time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std,
                           force_mask])
 
-    np.savetxt(output_folder + experiment_run[0] + '.csv', exp_data, delimiter=',',
+    np.savetxt(output_folder + filename + '.csv', exp_data, delimiter=',',
                header='time/s,position x/um,position y/um,position z/um,distance along force vector/um,'
                       'x mean force estimate/nN,y mean force estimate/nN,z mean force estimate/nN,'
                       'x std dev force estimate/nN,y std dev force estimate/nN,z std dev force estimate/nN,'
@@ -100,9 +117,9 @@ for experiment_run in file_list:
     print('postprocessing experiment: ' + filename)
 
     try:
-        analysed_data = a.full_analysis(output_folder + experiment_run[0] + '.csv')
+        analysed_data = a.full_analysis(output_folder + filename + '.csv')
 
-        analysed_data = [experiment_run[0]] + list(analysed_data)
+        analysed_data = [filename] + list(analysed_data)
 
         with open(output_folder + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)
@@ -110,7 +127,7 @@ for experiment_run in file_list:
 
     except IndexError:
         print('error: not able to extract force data')
-        error_message = [experiment_run[0]] + ['warning', 'no', 'data', 'available', '!']
+        error_message = [filename] + ['warning', 'no', 'data', 'available', '!']
 
         with open(output_folder + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)

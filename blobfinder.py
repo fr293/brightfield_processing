@@ -5,6 +5,7 @@ from skimage.feature import peak_local_max
 from skimage.filters import threshold_sauvola
 from skimage.exposure import adjust_gamma
 from skimage.morphology import remove_small_holes, remove_small_objects
+from skimage.transform import resize
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Arrow, Circle
@@ -12,6 +13,7 @@ from tqdm import tqdm
 import GP_force_predictor as f
 import re
 
+resize_factor = 2
 movement_threshold = 2
 vimba_scale_factor = 0.4975
 offset_x = 1294
@@ -30,12 +32,16 @@ def centercrop(image, cropsize):
     return cropped_image
 
 
-def findblob(image, sigma):
+def findblob(image, blobsize):
     image_response = np.zeros(image.shape, dtype=float)
-    gaussian_filter(image, sigma, order=2, output=image_response)
+    gaussian_filter(image, blobsize, order=2, output=image_response)
     peakloc = peak_local_max(image_response * -1, num_peaks=1)
-    peakx = peakloc[0, 1]
-    peaky = peakloc[0, 0]
+    try:
+        peakx = peakloc[0, 1]
+        peaky = peakloc[0, 0]
+    except IndexError:
+        peakx = 0
+        peaky = 0
     xa = [peakx - 1, peakx, peakx + 1]
     ya = [image_response[peaky, peakx - 1], image_response[peaky, peakx], image_response[peaky, peakx + 1]]
     xb = [peaky - 1, peaky, peaky + 1]
@@ -47,9 +53,9 @@ def findblob(image, sigma):
     # this assumes that the cropped image center is the same as the original image center
     imagesize = image.shape
     offset = imagesize[0]/2
-    x_shift_scale = (ainterp - offset) * vimba_scale_factor
-    y_shift_scale = (binterp - offset) * vimba_scale_factor
-    return [x_shift_scale, y_shift_scale]
+    x_shift = (ainterp - offset)
+    y_shift = (binterp - offset)
+    return [x_shift, y_shift]
 
 
 def computestrain(position_stack, force_stack):
@@ -70,12 +76,12 @@ def computestrain(position_stack, force_stack):
             handedness = np.cross(position_stack[k, :], unit_force)
             orthogonal_distance_stack[k] = np.sign(handedness[2]) * np.sqrt(
                 np.linalg.norm(position_stack[k, :]) - np.linalg.norm(dotted_distance_stack[k]))
-            orthogonal_distance_stack[k] = 0
+            orthogonal_distance_stack[k] = np.sqrt(np.linalg.norm(position_stack[k, :])**2 - dotted_distance_stack[k]**2)
 
     return dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack
 
 
-def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, cropsize, sigma, gamma_adjust):
+def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, cropsize, blobsize, gamma_adjust):
     try:
         image_stack = imageio.volread(image_filepath + image_filename + '.tif')
     except OSError:
@@ -95,7 +101,6 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
         image_filename = re.sub('_r', '', image_filename)
         z_values = np.genfromtxt(image_filepath + 'Z_information.csv', dtype=float, delimiter=',')
 
-    force_on = False
     stackshape = image_stack.shape
     length = stackshape[0]
     position_stack = np.zeros([length, 3])
@@ -108,115 +113,96 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
 
     dummy_direction = np.array([[-1, 0, 0], [0, 1, 0], [0, -1, 0], [1, 0, 0]])
 
+    for i in tqdm(range(0, length)):
+        # The values in the morphological filters are dependent on the image size, which is resized here to 0.5 its original dimension
+        image = centercrop(image_stack[i, :, :], cropsize)
+        image = resize(image, [cropsize/resize_factor, cropsize/resize_factor], anti_aliasing=True, mode='reflect')
+        image = median_filter(image, size=2)
+        image = adjust_gamma(image, gamma=gamma_adjust)
+        thresh = threshold_sauvola(image, window_size=23)
+        image_thresh = image > thresh
+        remove_small_holes(image_thresh, area_threshold=500, in_place=True)
+        remove_small_objects(image_thresh, min_size=1000, in_place=True)
+        x, y = findblob(image_thresh, blobsize/2)
+        position_stack[i, 0:2] = np.array([x, y])*vimba_scale_factor*2
+
+    position_stack[:, 2] = z_actual
+
+    predictor_array_x, predictor_array_y, predictor_array_z, lin_model_x, lin_model_y, lin_model_z\
+        = f.sweep_load(ca, cc)
+
+    force_data = f.lin_prediction(position_stack, predictor_array_x, predictor_array_y, predictor_array_z,
+                                  lin_model_x, lin_model_y, lin_model_z)
+
+    dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack = computestrain(position_stack,
+                                                                                            force_data[0])
+
+    movement_speed = np.diff(dotted_distance_stack)
+
+    force_magnitude_stack = np.multiply(force_magnitude_stack, force_mask)
+
     plt.ion()
     fig = plt.figure()
-    # ax = fig.add_subplot(1, 2, 2)
-    # ax2 = fig.add_subplot(1, 2, 1)
     ax = plt.subplot2grid((2, 2), (0, 0))
     ax2 = plt.subplot2grid((2, 2), (0, 1))
     ax3 = plt.subplot2grid((2, 2), (1, 0), colspan=2)
     ax4 = ax3.twinx()
     fig.suptitle(image_filename)
 
-    # print('processing images and calculating forces...')
+    # this axis plots the raw image
+    ax.cla()
+    ax.set_title('Raw Image')
+    ax.imshow(image, interpolation='nearest')
+    ax.axis('off')
+    ax.set_aspect('equal')
 
-    for i in tqdm(range(0, length)):
-        image = centercrop(image_stack[i, :, :], cropsize)
-        image = median_filter(image, size=2)
-        image = adjust_gamma(image, gamma=gamma_adjust)
+    # this block plots the thresholded image, along with the bead location and force vector
+    ax2.cla()
+    ax2.set_title('Processed Image')
+    ax2.imshow(image_thresh, interpolation='nearest')
+    ax2.axis('off')
+    ax2.set_aspect('equal')
+    (a, b, c) = position_stack[length-1, :]
+    imagesize = image.shape
+    offset = imagesize[0] / 2
+    im_x = int((a / vimba_scale_factor) + offset)
+    im_y = int((b / vimba_scale_factor) + offset)
+    circ = Circle((im_x, im_y), blobsize/2, color='red', linewidth=2, fill=False)
+    arrow = Arrow(im_x, im_y, 100 * force_stack[length-1, 0], 100 * force_stack[length-1, 1], width=30, color='black')
+    ax2.add_patch(circ)
+    ax2.add_patch(arrow)
+    ax2.scatter(x=(position_stack[0:length-1, 0] / vimba_scale_factor) + offset,
+                y=position_stack[0:length-1, 1] / vimba_scale_factor + offset, c='g', s=10)
 
-        thresh = threshold_sauvola(image, window_size=45)
-        image_thresh = image > thresh
-        remove_small_holes(image_thresh, area_threshold=2000, in_place=True)
-        remove_small_objects(image_thresh, min_size=2000, in_place=True)
-        x, y = findblob(image_thresh, sigma)
-        position_stack[i, 0:2] = [x, y]
-        force_stack[i, :] = dummy_direction[cc-1, :]
-        dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack = computestrain(position_stack,
-                                                                                                force_stack)
+    # this axis plots the strain in the direction of the force, the strain normal to the force
+    # and the force magnitude
+    ax3.cla()
+    ax3.set_xlim([0, time_stack[length - 1]])
+    if any(dotted_distance_stack[0:length-1] > 18):
+        ax3.set_ylim([-5, 1.1 * np.amax(dotted_distance_stack[0:length-1])])
+    else:
+        ax3.set_ylim([-5, 20])
 
-        diff = dotted_distance_stack[i] - dotted_distance_stack[i - 1]
-        if float(diff) > movement_threshold:
-            force_on = True
+    distance_along, = ax3.plot(time_stack[0:length-1], dotted_distance_stack[0:length-1], color='blue',
+                               linewidth=2, label='distance along force vector')
+    distance_residual, = ax3.plot(time_stack[0:length-1], orthogonal_distance_stack[0:length-1],
+                                  color='orange', linewidth=2, label='distance residual')
 
-        elif float(diff) < -movement_threshold:
-            force_on = False
+    ax3.set_ylabel('Bead Displacement/um')
+    ax3.set_xlabel('Time/s')
 
-        if not force_on:
-            force_mask[i] = 0
+    ax4.cla()
+    ax4.set_title('Bead Displacement and Force Magnitude')
+    ax4.set_xlabel('Time/s')
+    ax4.legend([distance_along, distance_residual, ],
+               ['distance along', 'distance residual'])
 
-        # this axis plots the raw image
-        ax.cla()
-        ax.set_title('Raw Image')
-        ax.imshow(image, interpolation='nearest')
-        ax.axis('off')
-        ax.set_aspect('equal')
+    plt.draw()
+    plt.pause(0.01)
 
-        # this block plots the thresholded image, along with the bead location and force vector
-        ax2.cla()
-        ax2.set_title('Processed Image')
-        ax2.imshow(image_thresh, interpolation='nearest')
-        ax2.axis('off')
-        ax2.set_aspect('equal')
-        (a, b, c) = position_stack[i, :]
-        imagesize = image.shape
-        offset = imagesize[0] / 2
-        im_x = int((a/vimba_scale_factor) + offset)
-        im_y = int((b/vimba_scale_factor) + offset)
-        circ = Circle((im_x, im_y), sigma, color='red', linewidth=2, fill=False)
-        arrow = Arrow(im_x, im_y, 100 * force_stack[i, 0], 100 * force_stack[i, 1], width=30, color='black')
-        ax2.add_patch(circ)
-        if force_on:
-            ax2.add_patch(arrow)
-        ax2.scatter(x=(position_stack[0:i, 0]/vimba_scale_factor) + offset,
-                    y=position_stack[0:i, 1]/vimba_scale_factor + offset, c='g', s=10)
-
-        # this axis plots the strain in the direction of the force, the strain normal to the force
-        # and the force magnitude
-        ax3.cla()
-        ax3.set_xlim([0, time_stack[length - 1]])
-        if any(dotted_distance_stack[0:i] > 18):
-            ax3.set_ylim([-5, 1.1*np.amax(dotted_distance_stack[0:i])])
-        else:
-            ax3.set_ylim([-5, 20])
-
-        distance_along, = ax3.plot(time_stack[0:i], dotted_distance_stack[0:i], color='blue',
-                                   linewidth=2, label='distance along force vector')
-        distance_residual, = ax3.plot(time_stack[0:i], orthogonal_distance_stack[0:i],
-                                      color='orange', linewidth=2, label='distance residual')
-
-        ax3.set_ylabel('Bead Displacement/um')
-        ax3.set_xlabel('Time/s')
-
-        ax4.cla()
-        ax4.set_title('Bead Displacement and Force Magnitude')
-        #ax4.set_xlim([0, time_stack[length - 1]])
-        #ax4.set_ylim([0, 10])
-        #force_magnitude, = ax4.plot(time_stack[0:i], force_magnitude_stack[0:i], color='red', linewidth=2)
-        ax4.set_xlabel('Time/s')
-        #ax4.set_ylabel('Force Magnitude/nN')
-        # ax4.legend([distance_along, distance_residual, force_magnitude],
-        #            ['distance along', 'distance residual', 'force magnitude'])
-        ax4.legend([distance_along, distance_residual,],
-                   ['distance along', 'distance residual'])
-
-        plt.draw()
-        plt.pause(0.01)
     plt.savefig(output_filepath + image_filename + '.svg')
     plt.savefig(output_filepath + image_filename + '.jpeg')
     plt.close(fig)
-
-    predictor_array_x, predictor_array_y, predictor_array_z, lin_model_x, lin_model_y, lin_model_z\
-        = f.sweep_load(ca, cc)
-
-    position_stack[:, 2] = z_actual
-
-    force_data = f.lin_prediction(position_stack, predictor_array_x, predictor_array_y, predictor_array_z,
-                              lin_model_x, lin_model_y, lin_model_z)
-
-    dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack = computestrain(position_stack,
-                                                                                            force_data[0])
-    force_magnitude_stack = np.multiply(force_magnitude_stack, force_mask)
 
     return [time_stack, position_stack, dotted_distance_stack, force_data[0], force_data[1], force_mask]
 
