@@ -13,8 +13,11 @@ from tqdm import tqdm
 import GP_force_predictor as f
 import re
 
+cropsize = 1900
+blobsize = 40
+gamma_adjust = 0.7
 resize_factor = 2
-threshold_size = 23
+threshold_size = 94
 hole_threshold_area = 2000
 object_threshold_area = 4000
 movement_threshold = 2
@@ -26,7 +29,7 @@ n_water = 1.333
 
 
 def round_odd(number):
-    return 2*np.floor(number/2)+1
+    return int(2*np.floor(number/2)+1)
 
 
 def centercrop(image, cropsize):
@@ -40,6 +43,8 @@ def centercrop(image, cropsize):
 
 
 def findblob(image, blobsize):
+    #takes an image and looks for a blob of the specified size
+    #returns the coordinates of the blob in pixels, centred on the image
     image_response = np.zeros(image.shape, dtype=float)
     gaussian_filter(image, blobsize, order=2, output=image_response)
     peakloc = peak_local_max(image_response * -1, num_peaks=1)
@@ -88,7 +93,7 @@ def computestrain(position_stack, force_stack):
     return dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack
 
 
-def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, cropsize, blobsize, gamma_adjust):
+def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     try:
         image_stack = imageio.volread(image_filepath + image_filename + '.tif')
     except OSError:
@@ -164,6 +169,7 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
     ax.set_aspect('equal')
 
     # this block plots the thresholded image, along with the bead location and force vector
+    # note that the scaling factor has to be removed for the annotations
     ax2.cla()
     ax2.set_title('Processed Image')
     ax2.imshow(image_thresh, interpolation='nearest')
@@ -212,4 +218,38 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc, crops
     plt.close(fig)
 
     return [time_stack, position_stack, dotted_distance_stack, force_data[0], force_data[1], force_mask]
+
+def thresholding_matrix():
+#     image_stack = imageio.volread(
+#         'D:\sync_folder\experiments_DNA_Brushes\A_series_2uM\\brightfield\A1\A1_E_0A1_10.tiff')
+    image_stack = imageio.volread(
+        'D:\sync_folder\experiments_DNA_Brushes\B_series_0uM2\\brightfield\B1\B1_E_0A2_30.tiff')
+
+    cropsize = 1900
+
+    gamma_adjust = [0.5,0.6,0.7,0.8]
+    window_sizes = [11,23,47,95]
+
+    fig, ax = plt.subplots(4, 4)
+
+    for i in range(4):
+        for j in range(4):
+            image = centercrop(image_stack[1, :, :], cropsize)
+            image = resize(image, [cropsize / resize_factor, cropsize / resize_factor], anti_aliasing=True,
+                           mode='reflect')
+            image = median_filter(image, size=2)
+            image = adjust_gamma(image, gamma=gamma_adjust[i])
+            thresh = threshold_sauvola(image, window_size=window_sizes[j])
+            image_thresh = image > thresh
+            remove_small_holes(image_thresh, area_threshold=np.floor(hole_threshold_area / resize_factor ** 2),
+                               in_place=True)
+            remove_small_objects(image_thresh, min_size=np.floor(object_threshold_area / resize_factor ** 2),
+                                 in_place=True)
+            x, y = findblob(image_thresh, 40 / resize_factor)
+            circ = Circle((x+475, y+475), 40 / 2, color='red', linewidth=2, fill=False)
+
+            ax[i,j].imshow(image_thresh)
+            ax[i,j].add_patch(circ)
+
+
 

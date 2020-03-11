@@ -12,10 +12,6 @@ from os.path import exists
 from shutil import copy
 import csv
 
-cropsize = 1900
-blobsize = 40
-gamma_adjust = 0.75
-
 f = Figlet(font='isometric1')
 print f.renderText('Ferg')
 time.sleep(1)
@@ -100,8 +96,7 @@ for experiment_run in file_list:
 
     try:
         [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std, force_mask] =\
-            b.findblobstack(filename, input_folder, output_folder, ca, cc, cropsize, blobsize,
-                            gamma_adjust)
+            b.findblobstack(filename, input_folder, output_folder, ca, cc)
     except IOError:
         print('error: experimental time data not found')
 
