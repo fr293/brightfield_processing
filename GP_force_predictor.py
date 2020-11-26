@@ -18,6 +18,8 @@ from sklearn import gaussian_process
 from sklearn.externals import joblib
 from sklearn.linear_model import LinearRegression
 import time
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import matplotlib.font_manager as fm

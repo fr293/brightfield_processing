@@ -7,6 +7,8 @@ from skimage.exposure import adjust_gamma
 from skimage.morphology import remove_small_holes, remove_small_objects
 from skimage.transform import resize
 import numpy as np
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Arrow, Circle
 from tqdm import tqdm
