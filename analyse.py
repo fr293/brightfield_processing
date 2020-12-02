@@ -106,7 +106,7 @@ def full_analysis(filepath, filename):
     exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, \
         x_std_dev_force, y_std_dev_force, z_std_dev_force, force_on = read_data(filepath)
 
-    start_index, end_index = force_switch_indices_semantic(filename)
+    start_index, end_index = force_switch_indices_semantic(filename, exp_time)
 
     creep_time, creep_viscosity, peak_deformation, viscous_displacement = \
         terminal_viscosity(start_index, end_index, exp_time, displacement)
