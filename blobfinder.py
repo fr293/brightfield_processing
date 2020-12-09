@@ -83,14 +83,13 @@ def computestrain(position_stack, force_stack):
     position_stack = position_stack - position_stack[0, :]
 
     for k in range(length):
-        if sum(force_stack[k, :]) != 0:
-            force_magnitude_stack[k] = np.linalg.norm(force_stack[k, :])
-            unit_force = force_stack[k, :] / force_magnitude_stack[k]
-            dotted_distance_stack[k] = np.dot(position_stack[k, :], unit_force)
-            handedness = np.cross(position_stack[k, :], unit_force)
-            orthogonal_distance_stack[k] = np.sign(handedness[2]) * np.sqrt(
-                np.linalg.norm(position_stack[k, :]) - np.linalg.norm(dotted_distance_stack[k]))
-            orthogonal_distance_stack[k] = np.sqrt(np.linalg.norm(position_stack[k, :])**2 - dotted_distance_stack[k]**2)
+        f_mag = np.linalg.norm(force_stack[k, 0:2])
+        if f_mag != 0:
+            force_magnitude_stack[k] = f_mag
+            unit_force = force_stack[k, 0:2] / force_magnitude_stack[k]
+            dotted_distance_stack[k] = np.dot(position_stack[k, 0:2], unit_force[0:2])
+            orthogonal_distance_stack[k] = np.sqrt(np.linalg.norm(position_stack[k, 0:2])**2
+                                                   - dotted_distance_stack[k]**2)
 
     return dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack
 
@@ -124,8 +123,6 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     time_stack = time_stack - time_stack[0]
     z_measured = (z_values[0]-z_values[1])*1000
     z_actual = 500 - (((1 - (n_water/n_glass))*200) + n_water*z_measured)
-
-    dummy_direction = np.array([[-1, 0, 0], [0, 1, 0], [0, -1, 0], [1, 0, 0]])
 
     for i in tqdm(range(0, length)):
         # The values in the morphological filters are dependent on the image size, which is resized here to 0.5 its original dimension
@@ -211,6 +208,8 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     ax4.set_xlabel('Time/s')
     ax4.legend([distance_along, distance_residual, ],
                ['distance along', 'distance residual'])
+    distance_residual, = ax4.plot(time_stack[0:length - 1], force_magnitude_stack[0:length - 1],
+                                  color='black', linewidth=2, label='force magnitude')
 
     plt.draw()
     plt.pause(0.01)

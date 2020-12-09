@@ -101,20 +101,24 @@ for experiment_run in file_list:
     # except IOError:
     #     print('error: experimental time data not found')
 
-    try:
-        [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std, force_mask] =\
-            b.findblobstack(filename, input_folder, output_folder, ca, cc)
+    if not exists(output_folder + filename + '.csv'):
+        try:
+            [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std, force_mask] = \
+                b.findblobstack(filename, input_folder, output_folder, ca, cc)
 
-        exp_data = np.hstack([time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std,
-                              force_mask])
+            exp_data = np.hstack([time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std,
+                                  force_mask])
 
-        np.savetxt(output_folder + filename + '.csv', exp_data, delimiter=',',
-                   header='time/s,position x/um,position y/um,position z/um,distance along force vector/um,'
-                          'x mean force estimate/nN,y mean force estimate/nN,z mean force estimate/nN,'
-                          'x std dev force estimate/nN,y std dev force estimate/nN,z std dev force estimate/nN,'
-                          'force on/off')
-    except IOError:
-        print('error: experimental time data not found')
+            np.savetxt(output_folder + filename + '.csv', exp_data, delimiter=',',
+                       header='time/s,position x/um,position y/um,position z/um,distance along force vector/um,'
+                              'x mean force estimate/nN,y mean force estimate/nN,z mean force estimate/nN,'
+                              'x std dev force estimate/nN,y std dev force estimate/nN,z std dev force estimate/nN,'
+                              'force on/off')
+
+        except IOError:
+            print('error: experimental time data not found')
+    else:
+        print('experimental data exists, proceeding to postprocessing')
 
     print('postprocessing experiment: ' + filename)
 
@@ -124,7 +128,7 @@ for experiment_run in file_list:
         analysed_data = [filename] + list(analysed_data)
 
 # the file mode w+ means the file will overwrite any existing file, if the file is not created
-        with open(output_folder + 'experiment_analysis.csv', 'w+') as f:
+        with open(output_folder + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)
             writer.writerow(analysed_data)
 
@@ -132,6 +136,6 @@ for experiment_run in file_list:
         print('error: not able to extract force data')
         error_message = [filename] + ['warning', 'no', 'data', 'available', '!']
 
-        with open(output_folder + 'experiment_analysis.csv', 'w+') as f:
+        with open(output_folder + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)
             writer.writerow(error_message)
