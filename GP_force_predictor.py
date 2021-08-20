@@ -137,20 +137,16 @@ def prediction(location_array, gpx, gpy, gpz, linx, liny, linz):
 
     return [magnitudes, deviations]
 
-def lin_prediction(location_array, gpx, gpy, gpz, linx, liny, linz):
 
-    mx = np.array(gpx.predict(location_array, return_std=True), ndmin=2).T
-    my = np.array(gpy.predict(location_array, return_std=True), ndmin=2).T
-    mz = np.array(gpz.predict(location_array, return_std=True), ndmin=2).T
+def lin_prediction(location_array, linx, liny, linz):
 
     linear_x = linx.predict(location_array).T
     linear_y = liny.predict(location_array).T
     linear_z = linz.predict(location_array).T
 
     magnitudes = np.column_stack((linear_x, linear_y, linear_z))
-    deviations = np.column_stack((mx[:, 0], my[:, 0], mz[:, 0]))
 
-    return [magnitudes, deviations]
+    return magnitudes
 
 def sweep_load(ca, cc):
     # ca is the current magnitude index, going from 1-9
@@ -161,11 +157,22 @@ def sweep_load(ca, cc):
     predictor_array_x = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'x.pkl')
     predictor_array_y = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'y.pkl')
     predictor_array_z = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'z.pkl')
-    lin_model_x = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'x_lin.pkl')
-    lin_model_y = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'y_lin.pkl')
-    lin_model_z = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'z_lin.pkl')
 
-    return predictor_array_x, predictor_array_y, predictor_array_z, lin_model_x, lin_model_y, lin_model_z
+    return predictor_array_x, predictor_array_y, predictor_array_z
+
+
+def sweep_load_lin(ca, cc):
+    # ca is the current magnitude index, going from 1-9
+    # cc is the direction index, going from 1-4
+
+    lin_model_x = joblib.load(
+        'D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'x_lin.pkl')
+    lin_model_y = joblib.load(
+        'D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'y_lin.pkl')
+    lin_model_z = joblib.load(
+        'D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'z_lin.pkl')
+
+    return lin_model_x, lin_model_y, lin_model_z
 
 def plot_map(ca):
     # ca is the current magnitude index, going from 1-9

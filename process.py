@@ -26,7 +26,7 @@ print('Please select the folder containing your input data:')
 root = Tk()
 root.withdraw()
 root.attributes("-topmost", True)
-root.directory = tkFileDialog.askdirectory(initialdir='D:\\sync_folder', title='Select Input Data Directory')
+root.directory = tkFileDialog.askdirectory(initialdir='D:\\OneDrive - University of Cambridge', title='Select Input Data Directory')
 input_folder = root.directory + '/'
 
 print('please select the file that contains details of the data to be processed:')
@@ -43,7 +43,7 @@ file_list = file_array.tolist()
 print('please select the folder that you want the processed data to be saved in:')
 
 root.directory = tkFileDialog.askdirectory(
-    initialdir='G:/Shared drives/Team Backup',
+    initialdir='G:\\Shared drives\\Team Backup\\fergus_data',
     title='Select Output Directory')
 output_folder = root.directory + '/'
 
@@ -101,19 +101,22 @@ for experiment_run in file_list:
     # except IOError:
     #     print('error: experimental time data not found')
 
-    if not exists(output_folder + filename + '.csv'):
+    if not exists(output_folder + filename + '.csv') and exists(output_folder + filename + '_rheos.csv'):
         try:
-            [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std, force_mask] = \
-                b.findblobstack(filename, input_folder, output_folder, ca, cc)
+            [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_mask, eigenposition,
+             eigenforce] = b.findblobstack(filename, input_folder, output_folder, ca, cc)
 
-            exp_data = np.hstack([time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std,
-                                  force_mask])
+            exp_data = np.hstack([time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_mask])
+            exp_data_rheos = np.hstack([time_stack, eigenposition, eigenforce])
 
             np.savetxt(output_folder + filename + '.csv', exp_data, delimiter=',',
                        header='time/s,position x/um,position y/um,position z/um,distance along force vector/um,'
                               'x mean force estimate/nN,y mean force estimate/nN,z mean force estimate/nN,'
-                              'x std dev force estimate/nN,y std dev force estimate/nN,z std dev force estimate/nN,'
                               'force on/off')
+
+            np.savetxt(output_folder + filename + '_rheos.csv', exp_data_rheos, delimiter=',',
+                       header='time/s, displacement/um, force/nN')
+
 
         except IOError:
             print('error: experimental time data not found')

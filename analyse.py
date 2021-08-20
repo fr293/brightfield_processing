@@ -4,11 +4,9 @@ import time
 
 def read_data(filepath):
     data = np.genfromtxt(filepath, dtype=float, delimiter=',')
-    exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, \
-        x_std_dev_force, y_std_dev_force, z_std_dev_force, force_on = data.T
+    exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force,  force_on = data.T
 
-    return exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, \
-        x_std_dev_force, y_std_dev_force, z_std_dev_force, force_on
+    return exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, force_on
 
 
 # this could be improved by directly interpreting the force on and off values in the experimental file
@@ -103,8 +101,7 @@ def terminal_displacement(displacement):
 
 
 def full_analysis(filepath, filename):
-    exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, \
-        x_std_dev_force, y_std_dev_force, z_std_dev_force, force_on = read_data(filepath)
+    exp_time, position_x, position_y, position_z, displacement, x_mean_force, y_mean_force, z_mean_force, force_on = read_data(filepath)
 
     start_index, end_index = force_switch_indices_semantic(filename, exp_time)
 
