@@ -8,12 +8,12 @@ from skimage.morphology import remove_small_holes, remove_small_objects
 from skimage.transform import resize
 import numpy as np
 import matplotlib
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Arrow, Circle
 from tqdm import tqdm
-import GP_force_predictor as f
+import GP_force_predictor as forcePredict
 import re
+matplotlib.use('TkAgg')
 
 cropsize = 1000
 cropsize_tracking = 300
@@ -35,35 +35,33 @@ def round_odd(number):
     return int(2*np.floor(number/2)+1)
 
 
-def centercrop(image, cropsize):
+def centercrop(image, crop_dimension):
     imagesize = image.shape
-    xmin = int(0.5 * (imagesize[1] - cropsize))
-    xmax = int(0.5 * (imagesize[1] + cropsize))
-    ymin = int(0.5 * (imagesize[0] - cropsize))
-    ymax = int(0.5 * (imagesize[0] + cropsize))
+    xmin = int(0.5 * (imagesize[1] - crop_dimension))
+    xmax = int(0.5 * (imagesize[1] + crop_dimension))
+    ymin = int(0.5 * (imagesize[0] - crop_dimension))
+    ymax = int(0.5 * (imagesize[0] + crop_dimension))
     corner = np.array([xmin, ymin])
     cropped_image = image[ymin:ymax, xmin:xmax]
     return cropped_image, corner
 
 
-def trackingcrop(image, cropsize_tracking, cropcenter):
+def trackingcrop(image, tracking_radius, cropcenter):
     # danger ahead: be careful around coordinate ordering
     # image.shape returns the format [y,x], and cropcenter is in [x,y]
-    imagesize = image.shape
-    xmin = int(cropcenter[0] - 0.5 * cropsize_tracking)
-    xmax = int(cropcenter[0] + 0.5 * cropsize_tracking)
-    ymin = int(cropcenter[1] - 0.5 * cropsize_tracking)
-    ymax = int(cropcenter[1] + 0.5 * cropsize_tracking)
+    xmin = int(cropcenter[0] - 0.5 * tracking_radius)
+    xmax = int(cropcenter[0] + 0.5 * tracking_radius)
+    ymin = int(cropcenter[1] - 0.5 * tracking_radius)
+    ymax = int(cropcenter[1] + 0.5 * tracking_radius)
     cropped_image = image[ymin:ymax, xmin:xmax]
     corner = np.array([xmin, ymin])
     return cropped_image, corner
 
 
-def findblob(image, blobsize):
+def findblob(image, filter_size):
     # takes an image and looks for a blob of the specified size
     # returns the coordinates of the blob in pixels, centred on the image
-    image_response = np.zeros(image.shape, dtype=float)
-    gaussian_filter(image, blobsize, order=2, output=image_response)
+    image_response = gaussian_filter(image, filter_size, order=2, output=float)
     peakloc = peak_local_max(image_response * -1, num_peaks=1)
     try:
         peakx = peakloc[0, 1]
@@ -87,12 +85,11 @@ def computestrain(position_stack, force_stack):
     length = stackshape[0]
 
     dotted_distance_stack = np.zeros([length, 1])
-    orthogonal_distance_stack = np.zeros([length, 1])
+    alignment_ratio = np.zeros([length, 1])
     force_magnitude_stack = np.zeros([length, 1])
-    position_stack_incremental = np.zeros([length, 2])
     # make starting position the datum
     position_stack = position_stack - position_stack[0, :]
-    position_stack_incremental = np.concatenate((np.zeros([1, 2]), np.diff(position_stack, axis=0)))
+    position_stack_incremental = np.concatenate((np.zeros([1, 3]), np.diff(position_stack, axis=0)))
 
     for k in range(length):
         f_mag = np.linalg.norm(force_stack[k, :2])
@@ -100,17 +97,22 @@ def computestrain(position_stack, force_stack):
             force_magnitude_stack[k] = f_mag
             unit_force = force_stack[k, :2] / force_magnitude_stack[k]
             dotted_distance_stack[k] = np.dot(position_stack_incremental[k, :2], unit_force[:2])
-            orthogonal_distance_stack[k] = np.sqrt(position_stack_incremental[k, :2]**2
-                                                   - dotted_distance_stack[k]**2)
+            c = np.cross(position_stack_incremental[k, :2].T, unit_force[:2].T)
+            s = np.sign(c)
+            if np.abs(dotted_distance_stack[k]) == 0:
+                alignment_ratio[k] = 0
+            else:
+                alignment_ratio[k] = s*(np.sqrt(np.linalg.norm(position_stack_incremental[k, :2])**2
+                                                - dotted_distance_stack[k]**2))/np.abs(dotted_distance_stack[k])
 
     dotted_distance_stack = np.cumsum(dotted_distance_stack, axis=0)
-    orthogonal_distance_stack = np.cumsum(orthogonal_distance_stack, axis=0)
 
-    return dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack
+    return dotted_distance_stack, alignment_ratio, force_magnitude_stack
 
 
 def locator(image):
-    image = resize(image, [image.shape[0] / resize_factor, image.shape[1] / resize_factor], anti_aliasing=True, mode='reflect')
+    image = resize(image, [image.shape[0] / resize_factor, image.shape[1] / resize_factor], anti_aliasing=True,
+                   mode='reflect')
     image = median_filter(image, size=2)
     image = adjust_gamma(image, gamma=gamma_adjust)
     thresh = threshold_sauvola(image, window_size=round_odd(threshold_size / resize_factor))
@@ -121,6 +123,48 @@ def locator(image):
     x = x * resize_factor
     y = y * resize_factor
     return x, y, image_thresh
+
+
+# this function finds the last value that's smaller than the nominal on or off time
+def index_finder(time_vector, critical_time):
+    difference = time_vector - critical_time
+    difference[difference > 0] = np.nan
+    index = np.nanargmin(np.abs(difference))
+    return index
+
+
+def force_switch_indices_semantic(filename, time_vector):
+    # all filenames end with a two character duration value
+    # extract this value and use it to interpret the indices
+    # hand-tuned start and end index values are listed in comments for each condition
+    duration_value = filename[-2:]
+
+    if duration_value == '10':
+        on_time = 10
+        off_time = 20
+        # start_index = 19
+        # end_index = 35
+
+    elif duration_value == '30':
+        on_time = 10
+        off_time = 40
+        # start_index = 19
+        # end_index = 71
+
+    elif duration_value == '90':
+        on_time = 10
+        off_time = 100
+        # start_index = 19
+        # end_index = 188
+
+    else:
+        print('error: filename does not end with duration code')
+        raise UserWarning
+
+    start_index = index_finder(time_vector, on_time)
+    end_index = index_finder(time_vector, off_time)
+
+    return start_index, end_index
 
 
 def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
@@ -148,8 +192,7 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     height_offset = stackshape[1] * 0.5
     width_offset = stackshape[2] * 0.5
     position_stack = np.zeros([length, 3])
-    force_stack = np.zeros([length, 3])
-    force_mask = np.ones([length, 1])
+    force_mask = np.zeros([length, 1])
     # make starting time the datum
     time_stack = time_stack - time_stack[0]
     z_measured = (z_values[0]-z_values[1])*1000
@@ -163,7 +206,7 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
 
     # Use previous blob location to inform where to look next
     for i in tqdm(range(1, length)):
-        image, corner = trackingcrop(image_stack[i, :, :], cropsize_tracking, position_stack[i-1, :2])
+        image, corner = trackingcrop(image_stack[i, :, :], cropsize_tracking, position_stack[i - 1, :2])
         x, y, image_thresh = locator(image)
         position_stack[i, 0:2] = np.array([x+corner[0], y+corner[1]])
 
@@ -172,22 +215,18 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     position_stack[:, :2] = position_stack[:, :2] - [width_offset, height_offset]
     position_stack[:, :2] = position_stack[:, :2] * vimba_scale_factor
 
-    lin_model_x, lin_model_y, lin_model_z = f.sweep_load_lin(ca, cc)
+    lin_model_x, lin_model_y, lin_model_z = forcePredict.sweep_load_lin(ca, cc)
 
-    force_stack = f.lin_prediction(position_stack, lin_model_x, lin_model_y, lin_model_z)
+    force_stack = forcePredict.lin_prediction(position_stack, lin_model_x, lin_model_y, lin_model_z)
 
-    dotted_distance_stack, orthogonal_distance_stack, force_magnitude_stack = computestrain(position_stack,
-                                                                                            force_stack)
+    start_index, end_index = force_switch_indices_semantic(image_filename, time_stack)
 
-    movement_speed = np.diff(dotted_distance_stack)
+    force_mask[start_index:end_index] = 1
 
-    force_magnitude_stack = np.multiply(force_magnitude_stack, force_mask)
+    eigendisplacement, alignment_ratio, eigenforce = computestrain(position_stack, force_stack)
 
-    eigenforce = force_magnitude_stack
+    eigenforce = np.multiply(eigenforce, force_mask)
 
-    eigendisplacement = dotted_distance_stack
-
-    plt.ion()
     fig = plt.figure()
     ax = plt.subplot2grid((2, 2), (0, 0))
     ax2 = plt.subplot2grid((2, 2), (0, 1))
@@ -225,55 +264,46 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     # and the force magnitude
     ax3.cla()
     ax3.set_xlim([0, time_stack[length - 1]])
-    ax3.set_ylim([-1, 1.1 * np.amax(dotted_distance_stack[0:length-1])])
-    distance_along = ax3.plot(time_stack[0:length-1], dotted_distance_stack[0:length-1], color='blue',
-                               linewidth=2, label='creep distance')
-    distance_residual = ax3.plot(time_stack[0:length-1], orthogonal_distance_stack[0:length-1],
-                                  color='orange', linewidth=2, label='distance residual')
+    ax3.set_ylim([-1, 1.1 * np.amax(eigendisplacement[0:length-1])])
+    ax3.plot(time_stack[0:length-1], eigendisplacement[0:length-1], color='blue', linewidth=2, label='creep distance')
 
     ax3.set_ylabel('Bead Displacement/um')
     ax3.set_xlabel('Time/s')
-    legend = ax3.legend(loc='upper right', fontsize='medium', framealpha=0.5)
+    ax3.legend(loc='upper right', fontsize='medium', framealpha=0.5)
 
     ax4.cla()
     ax4.set_title('Bead Displacement and Force Magnitude')
     ax4.set_xlabel('Time/s')
     ax4.set_ylabel('Force/nN')
-    force_plot = ax4.plot(time_stack[0:length - 1], force_magnitude_stack[0:length - 1],
-                                  color='black', linewidth=2, label='force magnitude')
-    ax4.set_ylim(0, 1.1*np.max(force_magnitude_stack[0:length - 1]))
-
-
-    plt.draw()
-    plt.pause(0.01)
+    ax4.plot(time_stack[0:length - 1], eigenforce[0:length - 1], color='black', linewidth=2, label='force magnitude')
+    ax4.set_ylim(0, 1.1*np.max(eigenforce[0:length - 1]))
 
     plt.savefig(output_filepath + image_filename + '.svg')
     plt.savefig(output_filepath + image_filename + '.jpeg')
     plt.close(fig)
 
-    return [time_stack, position_stack, dotted_distance_stack, force_stack, force_mask, eigenforce, eigenposition]
+    return [time_stack, position_stack, force_stack, force_mask, eigenforce, eigendisplacement, alignment_ratio]
 
 
 def thresholding_matrix():
-#     image_stack = imageio.volread(
-#         'D:\sync_folder\experiments_DNA_Brushes\A_series_2uM\\brightfield\A1\A1_E_0A1_10.tiff')
-    image_stack = imageio.volread(
-        'D:\sync_folder\experiments_DNA_Brushes\B_series_0uM2\\brightfield\B1\B1_E_0A2_30.tiff')
+#    image_stack = imageio.volread('D:\sync_folder\experiments_DNA_Brushes\A_series_2uM\\brightfield\A1\A1_E_0A1_10.tiff')
+    image_stack = imageio.volread('D:\\sync_folder\\experiments_DNA_Brushes'
+                                  '\\B_series_0uM2\\brightfield\\B1\\B1_E_0A2_30.tiff')
 
-    cropsize = 1900
+    crop_region = 1900
 
-    gamma_adjust = [0.5,0.6,0.7,0.8]
-    window_sizes = [11,23,47,95]
+    gamma_adjust_values = [0.5, 0.6, 0.7, 0.8]
+    window_sizes = [11, 23, 47, 95]
 
     fig, ax = plt.subplots(4, 4)
 
     for i in range(4):
         for j in range(4):
-            image = centercrop(image_stack[1, :, :], cropsize)
-            image = resize(image, [cropsize / resize_factor, cropsize / resize_factor], anti_aliasing=True,
+            image = centercrop(image_stack[1, :, :], crop_region)
+            image = resize(image, [crop_region / resize_factor, crop_region / resize_factor], anti_aliasing=True,
                            mode='reflect')
             image = median_filter(image, size=2)
-            image = adjust_gamma(image, gamma=gamma_adjust[i])
+            image = adjust_gamma(image, gamma=gamma_adjust_values[i])
             thresh = threshold_sauvola(image, window_size=window_sizes[j])
             image_thresh = image > thresh
             remove_small_holes(image_thresh, area_threshold=np.floor(hole_threshold_area / resize_factor ** 2),
@@ -283,8 +313,5 @@ def thresholding_matrix():
             x, y = findblob(image_thresh, 40 / resize_factor)
             circ = Circle((x+475, y+475), 40 / 2, color='red', linewidth=2, fill=False)
 
-            ax[i,j].imshow(image_thresh)
-            ax[i,j].add_patch(circ)
-
-
-
+            ax[i, j].imshow(image_thresh)
+            ax[i, j].add_patch(circ)

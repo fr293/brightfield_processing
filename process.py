@@ -12,6 +12,8 @@ from os.path import exists
 from shutil import copy
 import csv
 
+image_registration = False
+
 f = Figlet(font='isometric1')
 print f.renderText('Ferg')
 time.sleep(1)
@@ -26,13 +28,14 @@ print('Please select the folder containing your input data:')
 root = Tk()
 root.withdraw()
 root.attributes("-topmost", True)
-root.directory = tkFileDialog.askdirectory(initialdir='D:\\OneDrive - University of Cambridge', title='Select Input Data Directory')
-input_folder = root.directory + '/'
+root.directory = tkFileDialog.askdirectory(initialdir='D:\\OneDrive - University of Cambridge',
+                                           title='Select Input Data Directory')
+input_filepath = root.directory + '/'
 
 print('please select the file that contains details of the data to be processed:')
 
 root.filename = tkFileDialog.askopenfilename(
-    initialdir=input_folder, title='Select Experiment file',
+    initialdir=input_filepath, title='Select Experiment file',
     filetypes=(('csv files', '*.csv'), ('all files', '*.*')))
 
 # check that all the files mentioned in the input data file exist. If not, then raise a warning and possibly halt
@@ -43,26 +46,20 @@ file_list = file_array.tolist()
 print('please select the folder that you want the processed data to be saved in:')
 
 root.directory = tkFileDialog.askdirectory(
-    initialdir='G:\\Shared drives\\Team Backup\\fergus_data',
-    title='Select Output Directory')
-output_folder = root.directory + '/'
+    initialdir='F:\\Shared drives\\Team Backup\\fergus_data', title='Select Output Directory')
+output_filepath = root.directory + '/'
 
 # copy the experimental file over
 try:
-    copy(root.filename, output_folder)
+    copy(root.filename, output_filepath)
 except IOError:
     print ('the experimental file already exists in the output folder')
 
-with open(output_folder + 'experiment_analysis.csv', 'wb') as f:
+with open(output_filepath + 'experiment_analysis.csv', 'wb') as f:
     writer = csv.writer(f)
-    writer.writerow(['run name', 'viscous displacement', 'creep viscosity',
-                     'creep time', 'residual deformation', 'peak deformation', 'peak force'])
-# np.savetxt(output_folder + 'experiment_analysis.csv', ['run name', 'viscous displacement', 'creep viscosity',
-#                                                       'creep time', 'residual deformation', 'peak deformation'],
-#            fmt='%s', delimiter=',')
+    writer.writerow(['Run Name', 'Peak Deformation', 'Peak Force', 'Residual Deformation', 'Eta', 'C Beta', 'Beta'])
 
 print('success: starting analysis')
-
 
 
 # bring up an interaction box to ask whether the user wants registration, processing and/or postprocessing
@@ -70,75 +67,71 @@ for experiment_run in file_list:
     # extract current configurations
     [filename, ca, cc, fon, fdur, num_frames, frame_period, temp] = experiment_run
     filename = str(filename.replace('"', ''))
-    # if exists(input_folder + filename + '_r.tiff'):
-    #     print('experiment ' + filename + ' registered, proceeding to analysis')
-    # else:
-    #     print('preprocessing experiment: ' + filename)
-    #     try:
-    #         pre.register(filename + '_r.tiff', input_folder, filename + '.tiff', input_folder)
-    #     except IOError:
-    #         print('error: experimental image data not found')
-    #         continue
 
-    if exists(input_folder + filename + '.tiff'):
-        print('experiment ' + filename + ' registered, proceeding to analysis')
+    if image_registration:
+        print('using image registration')
+        if exists(input_filepath + filename + '_r.tiff'):
+            print('experiment ' + filename + ' registered, proceeding to analysis')
+        else:
+            print('preprocessing experiment: ' + filename)
+            try:
+                pre.register(filename + '_r.tiff', input_filepath, filename + '.tiff', input_filepath)
+            except IOError:
+                print('error: experimental image data not found')
+                continue
     else:
-        print('preprocessing experiment: ' + filename)
-        try:
-            pre.register(filename + '_r.tiff', input_folder, filename + '.tiff', input_folder)
-        except IOError:
+        print('proceeding without image registration')
+        if exists(input_filepath + filename + '.tiff'):
+            print('experiment ' + filename + ' found, proceeding to analysis')
+        else:
             print('error: experimental image data not found')
-            continue
-
-    # user_input = raw_input('Process ')
 
     print('analysing experiment: ' + filename)
 
-    # try:
-    #     [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_std, force_mask] =\
-    #         b.findblobstack(filename + '_r', input_folder, output_folder, ca, cc, cropsize, blobsize,
-    #                         gamma_adjust)
-    # except IOError:
-    #     print('error: experimental time data not found')
-
-    if not exists(output_folder + filename + '.csv') and exists(output_folder + filename + '_rheos.csv'):
+    if not (exists(output_filepath + filename + '.csv') and exists(output_filepath + filename + '_rheos.csv')):
         try:
-            [time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_mask, eigenposition,
-             eigenforce] = b.findblobstack(filename, input_folder, output_folder, ca, cc)
+            [time_stack, position_stack, force_stack, force_mask, eigenforce, eigendisplacement,
+             alignment_ratio] = b.findblobstack(filename, input_filepath, output_filepath, ca, cc)
 
-            exp_data = np.hstack([time_stack, absolute_position_stack, scaled_position_stack, force_mean, force_mask])
-            exp_data_rheos = np.hstack([time_stack, eigenposition, eigenforce])
+            # unit normalisation
+            position_stack = position_stack * 1E-6
+            eigendisplacement = eigendisplacement * 1E-6
+            force_stack = force_stack * 1E-9
+            eigenforce = eigenforce * 1E-9
 
-            np.savetxt(output_folder + filename + '.csv', exp_data, delimiter=',',
-                       header='time/s,position x/um,position y/um,position z/um,distance along force vector/um,'
-                              'x mean force estimate/nN,y mean force estimate/nN,z mean force estimate/nN,'
-                              'force on/off')
+            exp_data = np.hstack([time_stack, position_stack, eigendisplacement, alignment_ratio, force_stack,
+                                  eigenforce, force_mask])
+            exp_data_rheos = np.hstack([time_stack, eigendisplacement, eigenforce])
 
-            np.savetxt(output_folder + filename + '_rheos.csv', exp_data_rheos, delimiter=',',
-                       header='time/s, displacement/um, force/nN')
+            np.savetxt(output_filepath + filename + '_full.csv', exp_data, delimiter=',',
+                       header='time/s,position x/m,position y/m,position z/m,distance along force vector/m,'
+                              'alignment ratio,x mean force estimate/N,y mean force estimate/N,'
+                              'z mean force estimate/N, plane force/N,force on/off')
 
+            np.savetxt(output_filepath + filename + '_rheos.csv', exp_data_rheos, delimiter=',',
+                       header='time/s, displacement/m, force/N')
 
         except IOError:
             print('error: experimental time data not found')
     else:
-        print('experimental data exists, proceeding to postprocessing')
+        print('experimental data exists, proceeding to next experiment')
 
     print('postprocessing experiment: ' + filename)
 
     try:
-        analysed_data = a.full_analysis(output_folder + filename + '.csv', filename)
+        analysed_data = a.full_analysis(filename, output_filepath)
 
         analysed_data = [filename] + list(analysed_data)
 
-# the file mode w+ means the file will overwrite any existing file, if the file is not created
-        with open(output_folder + 'experiment_analysis.csv', 'ab') as f:
+# the file mode ab appends to the end of the file
+        with open(output_filepath + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)
             writer.writerow(analysed_data)
 
     except IndexError:
-        print('error: not able to extract force data')
+        print('error: not able to postprocess data for ' + filename)
         error_message = [filename] + ['warning', 'no', 'data', 'available', '!']
 
-        with open(output_folder + 'experiment_analysis.csv', 'ab') as f:
+        with open(output_filepath + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)
             writer.writerow(error_message)
