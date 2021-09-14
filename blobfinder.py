@@ -278,7 +278,6 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     ax4.plot(time_stack[0:length - 1], eigenforce[0:length - 1], color='black', linewidth=2, label='force magnitude')
     ax4.set_ylim(0, 1.1*np.max(eigenforce[0:length - 1]))
 
-    plt.savefig(output_filepath + image_filename + '.svg')
     plt.savefig(output_filepath + image_filename + '.jpeg')
     plt.close(fig)
 

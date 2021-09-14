@@ -28,7 +28,7 @@ print('Please select the folder containing your input data:')
 root = Tk()
 root.withdraw()
 root.attributes("-topmost", True)
-root.directory = tkFileDialog.askdirectory(initialdir='D:\\OneDrive - University of Cambridge',
+root.directory = tkFileDialog.askdirectory(initialdir='D:\\sync_folder\\experiments_DNA_Brushes',
                                            title='Select Input Data Directory')
 input_filepath = root.directory + '/'
 
@@ -46,7 +46,7 @@ file_list = file_array.tolist()
 print('please select the folder that you want the processed data to be saved in:')
 
 root.directory = tkFileDialog.askdirectory(
-    initialdir='F:\\Shared drives\\Team Backup\\fergus_data', title='Select Output Directory')
+    initialdir='G:\\Shared drives\\vesicles_team\\fergus_data', title='Select Output Directory')
 output_filepath = root.directory + '/'
 
 # copy the experimental file over
@@ -57,7 +57,8 @@ except IOError:
 
 with open(output_filepath + 'experiment_analysis.csv', 'wb') as f:
     writer = csv.writer(f)
-    writer.writerow(['Run Name', 'Peak Deformation', 'Peak Force', 'Residual Deformation', 'Eta', 'C Beta', 'Beta'])
+    writer.writerow(['Run Name', 'Peak Deformation', 'Peak Force', 'Residual Deformation', 'Model Plasticity', 'Eta',
+                     'C Beta', 'Beta'])
 
 print('success: starting analysis')
 

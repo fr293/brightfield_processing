@@ -45,27 +45,83 @@ def terminal_displacement(displacement):
     return mean
 
 
+def weight_function(data_smooth, time_period):
+    # takes the smoothed data array and returns a weighting array of equal length
+    tail_proportion = 0.1
+    weight_slope = 1
+
+    measured_time = rh.gettime(data_smooth)
+    time_size = measured_time.size
+    # calculate the base proportion excluding the initial 10 second experiment startup period
+    startup_length = 10.0 / time_period
+    base_proportion = np.int(np.ceil(((time_size - startup_length)*(1-tail_proportion)) + startup_length))
+    addendum_proportion = time_size - base_proportion
+    # julia uses 1 indexing
+    weights_base = np.arange(base_proportion) + 1
+    addendum_multiplier = np.round((weight_slope * np.arange(addendum_proportion)) + 1.0)
+    addendum_multiplier = addendum_multiplier.astype(int)
+    index = base_proportion + 1
+    for i in addendum_multiplier:
+        weights_addendum = np.ones(i) * index
+        weights_base = np.concatenate((weights_base, weights_addendum))
+        index = index + 1
+    weights_int = weights_base.astype(int)
+    weights_list = weights_int.tolist()
+
+    return weights_list
+
+
 def rheos_fract_maxwell(filename, filepath):
+
+    bead_radius = 20E-6
+    time_step = 1
+    strain_resolution = 1E-7/bead_radius
 
     file_location = filepath + filename + '_rheos.csv'
 
-    data = rh.importcsv(file_location, rh.Tweezers(20E-6), t_col=1, d_col=2, f_col=3, header=True)
-    data_res = rh.resample(data, dt=1)
-    data_smooth = rh.smooth(data_res, 2.5)
-    primitive_dashpot = rh.modelfit(data_smooth, rh.Dashpot, rh.stress_imposed, p0={'eta': 10.0}, lo={'eta': 0.0})
+    data = rh.importcsv(file_location, rh.Tweezers(bead_radius), t_col=1, d_col=2, f_col=3, header=True)
+    data_res = rh.resample(data, dt=time_step)
+    data_smooth = rh.smooth(data_res, 2.5*time_step)
+    time_weights = weight_function(data_smooth, time_step)
+    # extract and sum over stress data to get maximum detectable viscosity
+    stress_history = np.sum(rh.getstress(data_smooth))*time_step
+    visco_ceiling = stress_history/strain_resolution
+
+    primitive_maxwell = rh.modelfit(data_smooth, rh.Maxwell, rh.stress_imposed, p0={'eta': 10.0, 'k': 1.0},
+                                    lo={'k': 0.0, 'eta': 0.0}, hi={'k': 10, 'eta': visco_ceiling},
+                                    optmethod='LN_COBYLA', opttimeout=30)
     primitive_springpot = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed, p0={'beta': 0.05, 'c_beta': 0.05},
-                                      lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': np.inf})
-    dashpot_start = rh.dict(rh.getparams(primitive_dashpot, unicode=False))
+                                      lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 1000},
+                                      optmethod='LN_COBYLA', opttimeout=30)
+    dashpot_start = rh.dict(rh.getparams(primitive_maxwell, unicode=False))
     springpot_start = rh.dict(rh.getparams(primitive_springpot, unicode=False))
+    if dashpot_start['eta'] < 0.99*visco_ceiling:
+        p0_eta = dashpot_start['eta']
+    else:
+        p0_eta = 0.99*visco_ceiling
+
     model = rh.modelfit(data_smooth, rh.FractD_Maxwell, rh.stress_imposed,
                         p0={'beta': springpot_start['beta'], 'c_beta': springpot_start['c_beta'],
-                            'eta': dashpot_start['eta']}, lo={'beta': 0.001, 'c_beta': 0.0, 'eta': 0.0},
-                        hi={'beta': 0.999, 'c_beta': np.inf, 'eta': np.inf})
-
+                            'eta': p0_eta}, lo={'beta': 0.001, 'c_beta': 0.0, 'eta': 0.0},
+                        hi={'beta': 0.999, 'c_beta': 1000, 'eta': visco_ceiling}, weights=time_weights,
+                        optmethod='LN_COBYLA', opttimeout=30)
     parameters = rh.dict(rh.getparams(model, unicode=False))
-    eta = parameters['eta']
-    c_beta = parameters['c_beta']
-    beta = parameters['beta']
+
+    if parameters['eta'] < (0.99*visco_ceiling):
+        eta = parameters['eta']
+        c_beta = parameters['c_beta']
+        beta = parameters['beta']
+        model_plasticity = (stress_history/eta)*bead_radius
+
+    else:
+        model = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed, p0={'beta': springpot_start['beta'],
+                                                                              'c_beta': springpot_start['c_beta']},
+                            lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': np.inf})
+        parameters = rh.dict(rh.getparams(model, unicode=False))
+        eta = 0
+        c_beta = parameters['c_beta']
+        beta = parameters['beta']
+        model_plasticity = 0
 
     data_stress = rh.extract(data_smooth, rh.stress_only)
     data_fit = rh.modelpredict(data_stress, model)
@@ -89,10 +145,10 @@ def rheos_fract_maxwell(filename, filepath):
     ax2.yaxis.set_ticks([])
     ax2.set_ylabel('Normalised Model Error/AU')
     fig.suptitle(filename)
-    fig.savefig(filepath + filename + '_rheos.svg')
     fig.savefig(filepath + filename + '_rheos.jpeg')
+    plt.close(fig)
 
-    return eta, c_beta, beta
+    return eta, c_beta, beta, model_plasticity
 
 
 def full_analysis(filename, filepath):
@@ -107,6 +163,6 @@ def full_analysis(filename, filepath):
 
     peak_force = force_magnitude(x_mean_force[end_index], y_mean_force[end_index])
 
-    eta, c_beta, beta = rheos_fract_maxwell(filename, filepath)
+    eta, c_beta, beta, model_plasticity = rheos_fract_maxwell(filename, filepath)
 
-    return peak_deformation, peak_force, residual_deformation, eta, c_beta, beta
+    return peak_deformation, peak_force, residual_deformation, model_plasticity, eta, c_beta, beta
