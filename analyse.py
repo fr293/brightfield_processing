@@ -89,10 +89,10 @@ def rheos_fract_maxwell(filename, filepath):
 
     primitive_maxwell = rh.modelfit(data_smooth, rh.Maxwell, rh.stress_imposed, p0={'eta': 10.0, 'k': 1.0},
                                     lo={'k': 0.0, 'eta': 0.0}, hi={'k': 10, 'eta': visco_ceiling},
-                                    optmethod='LN_COBYLA', opttimeout=30)
+                                    optmethod='LN_SBPLX', opttimeout=30)
     primitive_springpot = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed, p0={'beta': 0.05, 'c_beta': 0.05},
                                       lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 1000},
-                                      optmethod='LN_COBYLA', opttimeout=30)
+                                      optmethod='LN_SBPLX', opttimeout=30)
     dashpot_start = rh.dict(rh.getparams(primitive_maxwell, unicode=False))
     springpot_start = rh.dict(rh.getparams(primitive_springpot, unicode=False))
     if dashpot_start['eta'] < 0.99*visco_ceiling:
@@ -100,11 +100,16 @@ def rheos_fract_maxwell(filename, filepath):
     else:
         p0_eta = 0.99*visco_ceiling
 
+    if not 0.01 < springpot_start['beta'] < 0.99:
+        p0_beta = 0.05
+    else:
+        p0_beta = springpot_start['beta']
+
     model = rh.modelfit(data_smooth, rh.FractD_Maxwell, rh.stress_imposed,
-                        p0={'beta': springpot_start['beta'], 'c_beta': springpot_start['c_beta'],
-                            'eta': p0_eta}, lo={'beta': 0.001, 'c_beta': 0.0, 'eta': 0.0},
-                        hi={'beta': 0.999, 'c_beta': 1000, 'eta': visco_ceiling}, weights=time_weights,
-                        optmethod='LN_COBYLA', opttimeout=30)
+                        p0={'beta': p0_beta, 'c_beta': springpot_start['c_beta'], 'eta': p0_eta},
+                        lo={'beta': 0.001, 'c_beta': 0.0, 'eta': 0.0},
+                        hi={'beta': 0.999, 'c_beta': 1000, 'eta': visco_ceiling},
+                        weights=time_weights, optmethod='LN_SBPLX', opttimeout=30)
     parameters = rh.dict(rh.getparams(model, unicode=False))
 
     if parameters['eta'] < (0.99*visco_ceiling):
