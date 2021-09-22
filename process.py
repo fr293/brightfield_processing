@@ -40,7 +40,8 @@ root.filename = tkFileDialog.askopenfilename(
 
 # check that all the files mentioned in the input data file exist. If not, then raise a warning and possibly halt
 
-file_array = np.genfromtxt(root.filename, dtype=None, skip_header=1, delimiter=',', encoding=None)
+file_array = np.genfromtxt(root.filename, dtype=None,
+                           skip_header=1, delimiter=',', encoding=None)
 file_list = file_array.tolist()
 
 print('please select the folder that you want the processed data to be saved in:')
@@ -64,7 +65,7 @@ with open(output_filepath + 'experiment_analysis.csv', 'wb') as f:
 print('success: starting analysis')
 
 
-# run through each experiment, extracting data and analysing where necessary 
+# run through each experiment, extracting data and analysing where necessary
 for experiment_run in file_list:
     # extract current configurations
     [filename, ca, cc, fon, fdur, num_frames, frame_period, temp] = experiment_run
@@ -73,18 +74,21 @@ for experiment_run in file_list:
     if image_registration:
         print('using image registration')
         if exists(input_filepath + filename + '_r.tiff'):
-            print('experiment ' + filename + ' registered, proceeding to analysis')
+            print('experiment ' + filename +
+                  ' registered, proceeding to analysis')
         else:
             print('preprocessing experiment: ' + filename)
             try:
-                pre.register(filename + '_r.tiff', input_filepath, filename + '.tiff', input_filepath)
+                pre.register(filename + '_r.tiff', input_filepath,
+                             filename + '.tiff', input_filepath)
             except IOError:
                 print('error: experimental image data not found')
                 continue
     else:
         print('proceeding without image registration')
         if exists(input_filepath + filename + '.tiff'):
-            print('experiment ' + filename + ' found, proceeding to data extraction')
+            print('experiment ' + filename +
+                  ' found, proceeding to data extraction')
         else:
             print('error: experimental image data not found')
 
@@ -101,7 +105,8 @@ for experiment_run in file_list:
 
             exp_data = np.hstack([time_stack, position_stack, eigendisplacement, alignment_ratio, force_stack,
                                   eigenforce, force_mask])
-            exp_data_rheos = np.hstack([time_stack, eigendisplacement, eigenforce])
+            exp_data_rheos = np.hstack(
+                [time_stack, eigendisplacement, eigenforce])
 
             np.savetxt(output_filepath + filename + '_full.csv', exp_data, delimiter=',',
                        header='time/s,position x/m,position y/m,position z/m,distance along force vector/m,'
@@ -116,8 +121,6 @@ for experiment_run in file_list:
     else:
         print('experimental data exists, proceeding to next experiment')
 
-
-
     print('postprocessing experiment: ' + filename)
         try:
         analysed_data = a.full_analysis(filename, output_filepath)
@@ -130,19 +133,18 @@ for experiment_run in file_list:
 
     except IndexError:
         print('error: not able to postprocess data for ' + filename)
-        error_message = [filename] + ['warning', 'no', 'data', 'available', '!']
+        error_message = [filename] + \
+            ['warning', 'no', 'data', 'available', '!']
 
         with open(output_filepath + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)
             writer.writerow(error_message)}
 
-# train distributions based on extracted parameters 
+# train distributions based on extracted parameters
 
 
-# if the training is successful, go over each experiment again and compute prediction bounds 
+# if the training is successful, go over each experiment again and compute prediction bounds
 for experiment_run in file_list:
     # extract current configurations
     [filename, ca, cc, fon, fdur, num_frames, frame_period, temp] = experiment_run
     filename = str(filename.replace('"', ''))
-
-

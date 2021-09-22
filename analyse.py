@@ -1,10 +1,9 @@
 from julia import RHEOS as rh
 import numpy as np
-from sklearn.covariance import empirical_covariance 
+from sklearn.covariance import empirical_covariance
 from matplotlib import pyplot as plt
 from julia import Pkg
 Pkg.activate("C:\\Users\\fr293\\code\\brightfield_processing\\rheos_env")
-
 
 
 def read_data(filepath):
@@ -13,11 +12,14 @@ def read_data(filepath):
 
     return exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, z_mean_force, eigenforce, force_on
 
+
 def read_analysis(filepath):
-    analysis = np.genfromtxt(filepath, usecols=(1,-3), dtype=(string, float, float, float), delimiter=',')
+    analysis = np.genfromtxt(filepath, usecols=(
+        1, -3), dtype=(string, float, float, float), delimiter=',')
     filename, eta, c_beta, beta = analysis.T
 
     return filename, eta, c_beta, beta
+
 
 def force_switch_indices(force_on_vector):
     indices = np.argwhere(force_on_vector)
@@ -29,7 +31,8 @@ def force_switch_indices(force_on_vector):
 # extract the peak displacement value and peak displacement time from a run, with robustness to noise and drift
 def peak_displacement(start_index, end_index, displacement):
     index_range = np.round(0.2 * (end_index - start_index))
-    y_data = displacement[int(end_index - index_range):int(end_index + index_range)]
+    y_data = displacement[int(end_index - index_range)
+                              :int(end_index + index_range)]
     peak_val = y_data.max()
     return peak_val
 
@@ -145,7 +148,8 @@ def rheos_fract_maxwell(filename, filepath):
     strain_residual = strain_residual / np.abs(strain_residual).max()
 
     fig, ax = plt.subplots()
-    ax.plot(measured_time, measured_strain, linewidth=2, label='measured strain')
+    ax.plot(measured_time, measured_strain,
+            linewidth=2, label='measured strain')
     ax.plot(measured_time, fit_strain, linewidth=2, label='fit strain')
     ax.set_xlabel('Time/s')
     ax.set_ylabel('Characteristic Strain')
@@ -170,18 +174,18 @@ def prediction_learn(filename, filepath, training_force=['0A5'], training_durati
     # check final number of entries: if <2, raise an error and exit
 
     # estimate mean
-    meanval = np.mean(filtered_params, axis=0))
+    meanval=np.mean(filtered_params, axis = 0))
 
     # estimate variance
-    cov_val = empirical_covariance(filtered_params)
+    cov_val=empirical_covariance(filtered_params)
 
     # Returns: 3D Gaussian mean and covariance parameters
 
 
 def prediction_run(mean, cov, stress_history, n=1000):
     # generate n parameter samples from the distribution
-    rng = np.random.default_rng()
-    params = rng.multivariate_normal(mean, cov, n).T
+    rng=np.random.default_rng()
+    params=rng.multivariate_normal(mean, cov, n).T
 
     # for each sample, generate strain data with RHEOS
 
@@ -191,8 +195,8 @@ def prediction_run(mean, cov, stress_history, n=1000):
 
     # calculate upper bound
     # calculate lower bound
-    #return mean, upper, lower
-    
+    # return mean, upper, lower
+
 
 
     # Returns: An array of mean strain, with upper and lower SD bounds
@@ -201,17 +205,18 @@ def prediction_run(mean, cov, stress_history, n=1000):
 
 
 def full_analysis(filename, filepath):
-    exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, z_mean_force, eigenforce, force_on = read_data(
+    exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, z_mean_force, eigenforce, force_on=read_data(
         filepath + filename + '_full.csv')
 
-    start_index, end_index = force_switch_indices(force_on)
+    start_index, end_index=force_switch_indices(force_on)
 
-    peak_deformation = peak_displacement(start_index, end_index, displacement)
+    peak_deformation=peak_displacement(start_index, end_index, displacement)
 
-    residual_deformation = terminal_displacement(displacement)
+    residual_deformation=terminal_displacement(displacement)
 
-    peak_force = force_magnitude(x_mean_force[end_index], y_mean_force[end_index])
+    peak_force=force_magnitude(
+        x_mean_force[end_index], y_mean_force[end_index])
 
-    eta, c_beta, beta, model_plasticity = rheos_fract_maxwell(filename, filepath)
+    eta, c_beta, beta, model_plasticity=rheos_fract_maxwell(filename, filepath)
 
     return peak_deformation, peak_force, residual_deformation, model_plasticity, eta, c_beta, beta
