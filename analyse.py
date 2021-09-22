@@ -1,22 +1,24 @@
+from julia import RHEOS as rh
 import numpy as np
+from sklearn.covariance import empirical_covariance 
 from matplotlib import pyplot as plt
 from julia import Pkg
 Pkg.activate("C:\\Users\\fr293\\code\\brightfield_processing\\rheos_env")
-from julia import RHEOS as rh
+
 
 
 def read_data(filepath):
     data = np.genfromtxt(filepath, dtype=float, delimiter=',')
-    exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, \
-        z_mean_force, eigenforce, force_on = data.T
+    exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, z_mean_force, eigenforce, force_on = data.T
 
-    return exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, \
-        z_mean_force, eigenforce, force_on
+    return exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, z_mean_force, eigenforce, force_on
 
+def read_analysis(filepath):
+    analysis = np.genfromtxt(filepath, usecols=(1,-3), dtype=(string, float, float, float), delimiter=',')
+    filename, eta, c_beta, beta = analysis.T
 
-# this could be improved by directly interpreting the force on and off values in the experimental file
-# find the nearest time value before the force on time, and the nearest time value after the time off (on + duration)
-# value
+    return filename, eta, c_beta, beta
+
 def force_switch_indices(force_on_vector):
     indices = np.argwhere(force_on_vector)
     start_index = indices[0] - 1
@@ -54,11 +56,13 @@ def weight_function(data_smooth, time_period):
     time_size = measured_time.size
     # calculate the base proportion excluding the initial 10 second experiment startup period
     startup_length = 10.0 / time_period
-    base_proportion = np.int(np.ceil(((time_size - startup_length)*(1-tail_proportion)) + startup_length))
+    base_proportion = np.int(
+        np.ceil(((time_size - startup_length)*(1-tail_proportion)) + startup_length))
     addendum_proportion = time_size - base_proportion
     # julia uses 1 indexing
     weights_base = np.arange(base_proportion) + 1
-    addendum_multiplier = np.round((weight_slope * np.arange(addendum_proportion)) + 1.0)
+    addendum_multiplier = np.round(
+        (weight_slope * np.arange(addendum_proportion)) + 1.0)
     addendum_multiplier = addendum_multiplier.astype(int)
     index = base_proportion + 1
     for i in addendum_multiplier:
@@ -79,7 +83,8 @@ def rheos_fract_maxwell(filename, filepath):
 
     file_location = filepath + filename + '_rheos.csv'
 
-    data = rh.importcsv(file_location, rh.Tweezers(bead_radius), t_col=1, d_col=2, f_col=3, header=True)
+    data = rh.importcsv(file_location, rh.Tweezers(
+        bead_radius), t_col=1, d_col=2, f_col=3, header=True)
     data_res = rh.resample(data, dt=time_step)
     data_smooth = rh.smooth(data_res, 2.5*time_step)
     time_weights = weight_function(data_smooth, time_step)
@@ -106,7 +111,8 @@ def rheos_fract_maxwell(filename, filepath):
         p0_beta = springpot_start['beta']
 
     model = rh.modelfit(data_smooth, rh.FractD_Maxwell, rh.stress_imposed,
-                        p0={'beta': p0_beta, 'c_beta': springpot_start['c_beta'], 'eta': p0_eta},
+                        p0={'beta': p0_beta,
+                            'c_beta': springpot_start['c_beta'], 'eta': p0_eta},
                         lo={'beta': 0.001, 'c_beta': 0.0, 'eta': 0.0},
                         hi={'beta': 0.999, 'c_beta': 1000, 'eta': visco_ceiling},
                         weights=time_weights, optmethod='LN_SBPLX', opttimeout=30)
@@ -156,9 +162,47 @@ def rheos_fract_maxwell(filename, filepath):
     return eta, c_beta, beta, model_plasticity
 
 
+def prediction_learn(filename, filepath, training_force=['0A5'], training_duration=['30', '90']))
+    # read in analysis output from CSV, transfer only name, [parameters]
+
+    # search for correct training force, duration
+    # remove all failed entries with zero viscosity
+    # check final number of entries: if <2, raise an error and exit
+
+    # estimate mean
+    meanval = np.mean(filtered_params, axis=0))
+
+    # estimate variance
+    cov_val = empirical_covariance(filtered_params)
+
+    # Returns: 3D Gaussian mean and covariance parameters
+
+
+def prediction_run(mean, cov, stress_history, n=1000):
+    # generate n parameter samples from the distribution
+    rng = np.random.default_rng()
+    params = rng.multivariate_normal(mean, cov, n).T
+
+    # for each sample, generate strain data with RHEOS
+
+    # calculate mean of generated strain data
+
+    # calculate SD of generated strain data
+
+    # calculate upper bound
+    # calculate lower bound
+    #return mean, upper, lower
+    
+
+
+    # Returns: An array of mean strain, with upper and lower SD bounds
+
+
+
+
 def full_analysis(filename, filepath):
-    exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, \
-            z_mean_force, eigenforce, force_on = read_data(filepath + filename + '_full.csv')
+    exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, z_mean_force, eigenforce, force_on = read_data(
+        filepath + filename + '_full.csv')
 
     start_index, end_index = force_switch_indices(force_on)
 

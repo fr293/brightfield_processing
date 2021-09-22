@@ -55,6 +55,7 @@ try:
 except IOError:
     print ('the experimental file already exists in the output folder')
 
+# file mode 'wb' will overwrite file contents if one exists
 with open(output_filepath + 'experiment_analysis.csv', 'wb') as f:
     writer = csv.writer(f)
     writer.writerow(['Run Name', 'Peak Deformation', 'Peak Force', 'Residual Deformation', 'Model Plasticity', 'Eta',
@@ -63,7 +64,7 @@ with open(output_filepath + 'experiment_analysis.csv', 'wb') as f:
 print('success: starting analysis')
 
 
-# bring up an interaction box to ask whether the user wants registration, processing and/or postprocessing
+# run through each experiment, extracting data and analysing where necessary 
 for experiment_run in file_list:
     # extract current configurations
     [filename, ca, cc, fon, fdur, num_frames, frame_period, temp] = experiment_run
@@ -83,11 +84,9 @@ for experiment_run in file_list:
     else:
         print('proceeding without image registration')
         if exists(input_filepath + filename + '.tiff'):
-            print('experiment ' + filename + ' found, proceeding to analysis')
+            print('experiment ' + filename + ' found, proceeding to data extraction')
         else:
             print('error: experimental image data not found')
-
-    print('analysing experiment: ' + filename)
 
     if not (exists(output_filepath + filename + '.csv') and exists(output_filepath + filename + '_rheos.csv')):
         try:
@@ -117,11 +116,11 @@ for experiment_run in file_list:
     else:
         print('experimental data exists, proceeding to next experiment')
 
+
+
     print('postprocessing experiment: ' + filename)
-
-    try:
+        try:
         analysed_data = a.full_analysis(filename, output_filepath)
-
         analysed_data = [filename] + list(analysed_data)
 
 # the file mode ab appends to the end of the file
@@ -135,4 +134,15 @@ for experiment_run in file_list:
 
         with open(output_filepath + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)
-            writer.writerow(error_message)
+            writer.writerow(error_message)}
+
+# train distributions based on extracted parameters 
+
+
+# if the training is successful, go over each experiment again and compute prediction bounds 
+for experiment_run in file_list:
+    # extract current configurations
+    [filename, ca, cc, fon, fdur, num_frames, frame_period, temp] = experiment_run
+    filename = str(filename.replace('"', ''))
+
+
