@@ -1,21 +1,27 @@
+from julia import Pkg
+
+Pkg.activate("C:\\Users\\fr293\\code\\brightfield_processing\\rheos_env")
 from julia import RHEOS as rh
 import numpy as np
 from sklearn.covariance import empirical_covariance
 from matplotlib import pyplot as plt
-from julia import Pkg
-
-Pkg.activate("C:\\Users\\fr293\\code\\brightfield_processing\\rheos_env")
+from tqdm import tqdm
 
 bead_radius = 20E-6
 time_step = 1
 strain_resolution = 1E-7 / bead_radius
+opt_ftol = 1E-9
+timeout = 30
+optimiser = 'LN_COBYLA'
 
 
 def read_data(filepath):
     data = np.genfromtxt(filepath, dtype=float, delimiter=',', skip_header=1)
-    exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, z_mean_force, eigenforce, force_on = data.T
+    exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, \
+    z_mean_force, eigenforce, force_on = data.T
 
-    return exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, z_mean_force, eigenforce, force_on
+    return exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, \
+           z_mean_force, eigenforce, force_on
 
 
 def read_analysis(filepath):
@@ -52,7 +58,7 @@ def terminal_displacement(displacement):
     return mean
 
 
-def rheos_import(filepath, filename):
+def rheos_import(filename, filepath):
     file_location = filepath + filename + '_rheos.csv'
     data = rh.importcsv(file_location, rh.Tweezers(bead_radius), t_col=1, d_col=2, f_col=3, header=True)
     data_res = rh.resample(data, dt=time_step)
@@ -97,10 +103,10 @@ def rheos_fract_maxwell(filename, filepath):
 
     primitive_maxwell = rh.modelfit(data_smooth, rh.Maxwell, rh.stress_imposed, p0={'eta': 10.0, 'k': 1.0},
                                     lo={'k': 0.0, 'eta': 0.0}, hi={'k': 10, 'eta': visco_ceiling},
-                                    optmethod='LN_SBPLX', opttimeout=30)
-    primitive_springpot = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed, p0={'beta': 0.05, 'c_beta': 0.05},
-                                      lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 1000},
-                                      optmethod='LN_SBPLX', opttimeout=30)
+                                    optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
+    primitive_springpot = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed, p0={'beta': 0.05, 'c_beta': 1},
+                                      lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 10.0},
+                                      optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
     dashpot_start = rh.dict(rh.getparams(primitive_maxwell, unicode=False))
     springpot_start = rh.dict(rh.getparams(primitive_springpot, unicode=False))
     if dashpot_start['eta'] < 0.99 * visco_ceiling:
@@ -114,11 +120,10 @@ def rheos_fract_maxwell(filename, filepath):
         p0_beta = springpot_start['beta']
 
     model = rh.modelfit(data_smooth, rh.FractD_Maxwell, rh.stress_imposed,
-                        p0={'beta': p0_beta,
-                            'c_beta': springpot_start['c_beta'], 'eta': p0_eta},
+                        p0={'beta': p0_beta, 'c_beta': springpot_start['c_beta'], 'eta': p0_eta},
                         lo={'beta': 0.001, 'c_beta': 0.0, 'eta': 0.0},
-                        hi={'beta': 0.999, 'c_beta': 1000, 'eta': visco_ceiling},
-                        weights=time_weights, optmethod='LN_SBPLX', opttimeout=30)
+                        hi={'beta': 0.999, 'c_beta': 10.0, 'eta': visco_ceiling},
+                        weights=time_weights, optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
     parameters = rh.dict(rh.getparams(model, unicode=False))
 
     if parameters['eta'] < (0.99 * visco_ceiling):
@@ -128,9 +133,10 @@ def rheos_fract_maxwell(filename, filepath):
         model_plasticity = (stress_history / eta) * bead_radius
 
     else:
-        model = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed, p0={'beta': springpot_start['beta'],
-                                                                              'c_beta': springpot_start['c_beta']},
-                            lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': np.inf})
+        model = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed,
+                            p0={'beta': springpot_start['beta'], 'c_beta': springpot_start['c_beta']},
+                            lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 10.0},
+                            weights=time_weights, optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
         parameters = rh.dict(rh.getparams(model, unicode=False))
         eta = 0
         c_beta = parameters['c_beta']
@@ -198,29 +204,70 @@ def prediction_learn(filepath, training_force=None, training_duration=None):
     return meanval, cov_val
 
 
-def prediction_run(mean, cov, stress_history, n=1000):
+def prediction_run(mean, cov, filename, filepath, n=1000):
+    print('predicting ' + filename)
+    file_location = filepath + filename + '_rheos.csv'
+    rheo_data = rh.importcsv(file_location, rh.Tweezers(bead_radius), t_col=1, d_col=2, f_col=3, header=True)
+    stress_history = rh.onlystress(rheo_data)
+    measured_time = rh.gettime(rheo_data)
+    measured_strain = rh.getstrain(rheo_data)
     # generate n parameter samples from the distribution
     params = np.random.multivariate_normal(mean, cov, n)
+    # remove nonpositive values from the parameter array
+    params = params[params.min(axis=1) >= 0, :]
     paramslist = params.tolist()
+    draw_length = len(paramslist)
     # for each sample, generate strain data with RHEOS
     time_array = rh.gettime(stress_history)
     exp_length = time_array.size
     strain_array = np.empty((0, exp_length))
-    for sample in paramslist:
+    for sample in tqdm(paramslist):
         paramdict = {'beta': sample[2], 'c_beta': sample[1], 'eta': sample[0]}
-        model = rh.RheoModel(rh.FractD_Maxwell, rh.symbol_to_unicode(paramdict))
-        data_predict = rh.modelpredict(stress_history, model)
+        # double star paramdict to expand as kwargs
+        data_predict = rh.modelpredict(stress_history, rh.FractD_Maxwell, **paramdict)
         predict_strain = rh.getstrain(data_predict)
         strain_array = np.vstack([strain_array, predict_strain])
 
-    # calculate mean of generated strain data
-    mean_strain = np.mean(strain_array, axis=0)
+    paramdict_mean = {'beta': mean[2], 'c_beta': mean[1], 'eta': mean[0]}
+    data_predict_mean = rh.modelpredict(stress_history, rh.FractD_Maxwell, **paramdict_mean)
+    mean_strain = rh.getstrain(data_predict_mean)
+
+    mean_strain_diff = measured_strain - mean_strain
+    mean_strain_distance = np.linalg.norm(mean_strain_diff, 2)
+
+    # paramslist has the same number of elements as strain_array is long
+    distance_matrix = np.zeros((draw_length, draw_length))
+    for i in range(draw_length):
+        for j in range(draw_length):
+            if i == j:
+                distance_matrix[i, j] = 0
+            else:
+                difference = strain_array[i, :] - strain_array[j, :]
+                distance_matrix[i, j] = np.linalg.norm(difference, 2)
+
+    combinations = (draw_length ** 2 - draw_length)
+
+    expected_distance = np.sum(distance_matrix) / combinations
+
+    consistency_coefficient = mean_strain_distance / expected_distance
+
     # calculate upper bound
-    upper_strain = np.percentile(strain_array, 90, axis=0)
+    upper_strain = np.percentile(strain_array, 95, axis=0)
     # calculate lower bound
-    lower_strain = np.percentile(strain_array, 10, axis=0)
-    # return mean, upper, lower
-    return mean_strain, upper_strain, lower_strain
+    lower_strain = np.percentile(strain_array, 5, axis=0)
+
+    # produce check plot
+    fig, ax = plt.subplots()
+    ax.plot(measured_time, measured_strain, linewidth=2, label='measured strain')
+    ax.plot(measured_time, mean_strain, linewidth=2, label='predicted strain')
+    ax.fill_between(measured_time, lower_strain, upper_strain, alpha=0.2, label='90% confidence interval')
+    ax.set_xlabel('Time/s')
+    ax.set_ylabel('Characteristic Strain')
+    ax.legend(loc='upper right', fontsize='medium', framealpha=0.5)
+    fig.suptitle(filename)
+    fig.savefig(filepath + filename + '_check.jpeg')
+    plt.close(fig)
+    return mean_strain, upper_strain, lower_strain, consistency_coefficient
 
 
 def full_analysis(filename, filepath):
@@ -233,8 +280,7 @@ def full_analysis(filename, filepath):
 
     residual_deformation = terminal_displacement(displacement)
 
-    peak_force = force_magnitude(
-        x_mean_force[end_index], y_mean_force[end_index])
+    peak_force = force_magnitude(x_mean_force[end_index], y_mean_force[end_index])
 
     eta, c_beta, beta, model_plasticity = rheos_fract_maxwell(filename, filepath)
 

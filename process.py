@@ -61,8 +61,12 @@ with open(output_filepath + 'experiment_analysis.csv', 'wb') as f:
     writer.writerow(['Run Name', 'Peak Deformation', 'Peak Force', 'Residual Deformation', 'Model Plasticity', 'Eta',
                      'C Beta', 'Beta'])
 
-print('success: starting analysis')
+# file mode 'wb' will overwrite file contents if one exists
+with open(output_filepath + 'consistency_analysis.csv', 'wb') as f:
+    writer = csv.writer(f)
+    writer.writerow(['Run Name', 'Consistency Coefficient'])
 
+print('success: starting analysis')
 
 # run through each experiment, extracting data and analysing where necessary
 for experiment_run in file_list:
@@ -91,7 +95,7 @@ for experiment_run in file_list:
         else:
             print('error: experimental image data not found')
 
-    if not (exists(output_filepath + filename + '.csv') and exists(output_filepath + filename + '_rheos.csv')):
+    if not (exists(output_filepath + filename + '_full.csv') and exists(output_filepath + filename + '_rheos.csv')):
         try:
             [time_stack, position_stack, force_stack, force_mask, eigenforce, eigendisplacement,
              alignment_ratio] = b.findblobstack(filename, input_filepath, output_filepath, ca, cc)
@@ -104,8 +108,7 @@ for experiment_run in file_list:
 
             exp_data = np.hstack([time_stack, position_stack, eigendisplacement, alignment_ratio, force_stack,
                                   eigenforce, force_mask])
-            exp_data_rheos = np.hstack(
-                [time_stack, eigendisplacement, eigenforce])
+            exp_data_rheos = np.hstack([time_stack, eigendisplacement, eigenforce])
 
             np.savetxt(output_filepath + filename + '_full.csv', exp_data, delimiter=',', comments='',
                        header='time/s,position x/m,position y/m,position z/m,distance along force vector/m,'
@@ -118,7 +121,7 @@ for experiment_run in file_list:
         except IOError:
             print('error: experimental time data not found')
     else:
-        print('experimental data exists, proceeding to next experiment')
+        print('experimental data exists, proceeding to postprocessing')
 
     print('postprocessing experiment: ' + filename)
     try:
@@ -133,17 +136,29 @@ for experiment_run in file_list:
     except IndexError:
         print('error: not able to postprocess data for ' + filename)
         error_message = [filename] + \
-            ['warning', 'no', 'data', 'available', '!']
+                        ['warning', 'no', 'data', 'available', '!']
 
         with open(output_filepath + 'experiment_analysis.csv', 'ab') as f:
             writer = csv.writer(f)
             writer.writerow(error_message)
 
-# train distributions based on extracted parameters
+# after finishing analysis loop, train distributions based on extracted parameters
+try:
+    print('training population predictor')
+    meanval, cov_val = a.prediction_learn(output_filepath)
+except UserWarning:
+    print('error: insufficient data available for training')
+    quit()
 
-
-# if the training is successful, go over each experiment again and compute prediction bounds
+print('generating predictions')
+# if the training is successful, go over the loop again and compute prediction bounds
 for experiment_run in file_list:
     # extract current configurations
     [filename, ca, cc, fon, fdur, num_frames, frame_period, temp] = experiment_run
     filename = str(filename.replace('"', ''))
+    mean_strain, upper_strain, lower_strain, consistency_coefficient = \
+        a.prediction_run(meanval, cov_val, filename, output_filepath)
+    # the file mode ab appends to the end of the file
+    with open(output_filepath + 'consistency_analysis.csv', 'ab') as f:
+        writer = csv.writer(f)
+        writer.writerow([filename, consistency_coefficient])
