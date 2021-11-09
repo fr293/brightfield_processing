@@ -12,7 +12,6 @@ time_step = 1
 strain_resolution = 1E-7 / bead_radius
 opt_ftol = 1E-9
 timeout = 30
-optimiser = 'LN_COBYLA'
 
 
 def read_data(filepath):
@@ -101,50 +100,76 @@ def rheos_fract_maxwell(filename, filepath):
     stress_history = np.sum(rh.getstress(data_smooth)) * time_step
     visco_ceiling = stress_history / strain_resolution
 
-    primitive_maxwell = rh.modelfit(data_smooth, rh.Maxwell, rh.stress_imposed, p0={'eta': 10.0, 'k': 1.0},
-                                    lo={'k': 0.0, 'eta': 0.0}, hi={'k': 10, 'eta': visco_ceiling},
-                                    optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
-    primitive_springpot = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed, p0={'beta': 0.05, 'c_beta': 1},
-                                      lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 10.0},
-                                      optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
-    dashpot_start = rh.dict(rh.getparams(primitive_maxwell, unicode=False))
-    springpot_start = rh.dict(rh.getparams(primitive_springpot, unicode=False))
-    if dashpot_start['eta'] < 0.99 * visco_ceiling:
-        p0_eta = dashpot_start['eta']
-    else:
-        p0_eta = 0.99 * visco_ceiling
+    optimiser_list = ['LN_SBPLX', 'LN_COBYLA', 'LN_BOBYQA']
 
-    if not 0.01 < springpot_start['beta'] < 0.99:
-        p0_beta = 0.05
-    else:
-        p0_beta = springpot_start['beta']
+    preferred_results = []
+    alternate_results = []
 
-    model = rh.modelfit(data_smooth, rh.FractD_Maxwell, rh.stress_imposed,
-                        p0={'beta': p0_beta, 'c_beta': springpot_start['c_beta'], 'eta': p0_eta},
-                        lo={'beta': 0.001, 'c_beta': 0.0, 'eta': 0.0},
-                        hi={'beta': 0.999, 'c_beta': 10.0, 'eta': visco_ceiling},
-                        weights=time_weights, optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
-    parameters = rh.dict(rh.getparams(model, unicode=False))
+    for optimiser in optimiser_list:
+        print('Optimising using ' + optimiser)
+        primitive_maxwell = rh.modelfit(data_smooth, rh.Maxwell, rh.stress_imposed, p0={'eta': 10.0, 'k': 1.0},
+                                        lo={'k': 0.0, 'eta': 0.0}, hi={'k': 10, 'eta': visco_ceiling},
+                                        optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
+        primitive_springpot = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed, p0={'beta': 0.05, 'c_beta': 1},
+                                          lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 10.0},
+                                          optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
+        dashpot_start = rh.dict(rh.getparams(primitive_maxwell, unicode=False))
+        springpot_start = rh.dict(rh.getparams(primitive_springpot, unicode=False))
+        if dashpot_start['eta'] < 0.99 * visco_ceiling:
+            p0_eta = dashpot_start['eta']
+        else:
+            p0_eta = 0.99 * visco_ceiling
 
-    if parameters['eta'] < (0.99 * visco_ceiling):
-        eta = parameters['eta']
-        c_beta = parameters['c_beta']
-        beta = parameters['beta']
+        if not 0.01 < springpot_start['beta'] < 0.99:
+            p0_beta = 0.05
+        else:
+            p0_beta = springpot_start['beta']
+
+        model = rh.modelfit(data_smooth, rh.FractD_Maxwell, rh.stress_imposed,
+                            p0={'beta': p0_beta, 'c_beta': springpot_start['c_beta'], 'eta': p0_eta},
+                            lo={'beta': 0.001, 'c_beta': 0.0, 'eta': 0.0},
+                            hi={'beta': 0.999, 'c_beta': 10.0, 'eta': visco_ceiling},
+                            weights=time_weights, optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
+        parameters = rh.dict(rh.getparams(model, unicode=False))
+        if parameters['eta'] < (0.99 * visco_ceiling):
+            # add model error and model as tuple to preferred list
+            model_error = data_smooth.log[-1].info.error
+            preferred_results.append((model_error, model, optimiser))
+
+        else:
+            model = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed,
+                                p0={'beta': springpot_start['beta'], 'c_beta': springpot_start['c_beta']},
+                                lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 10.0},
+                                weights=time_weights, optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
+            # add model error and model to non-preferred list
+            model_error = data_smooth.log[-1].info.error
+            alternate_results.append((model_error, model, optimiser))
+
+    # check model lists, choose model from preferred list with lowest error
+    # if preferred list is empty, choose model from non-preferred list with lowest error
+
+    if preferred_results:
+        error_list = [params[0] for params in preferred_results]
+        best_result_index = error_list.index(min(error_list))
+        (best_error, best_model, best_optimiser) = preferred_results[best_result_index]
+        best_parameters = rh.dict(rh.getparams(best_model, unicode=False))
+        eta = best_parameters['eta']
+        c_beta = best_parameters['c_beta']
+        beta = best_parameters['beta']
         model_plasticity = (stress_history / eta) * bead_radius
 
     else:
-        model = rh.modelfit(data_smooth, rh.Springpot, rh.stress_imposed,
-                            p0={'beta': springpot_start['beta'], 'c_beta': springpot_start['c_beta']},
-                            lo={'beta': 0.001, 'c_beta': 0.0}, hi={'beta': 0.999, 'c_beta': 10.0},
-                            weights=time_weights, optmethod=optimiser, opttimeout=timeout, rel_tol_f=opt_ftol)
-        parameters = rh.dict(rh.getparams(model, unicode=False))
+        error_list = [params[0] for params in alternate_results]
+        best_result_index = error_list.index(min(error_list))
+        (best_error, best_model, best_optimiser) = alternate_results[best_result_index]
+        best_parameters = rh.dict(rh.getparams(best_model, unicode=False))
         eta = 0
-        c_beta = parameters['c_beta']
-        beta = parameters['beta']
+        c_beta = best_parameters['c_beta']
+        beta = best_parameters['beta']
         model_plasticity = 0
 
     data_stress = rh.extract(data_smooth, rh.stress_only)
-    data_fit = rh.modelpredict(data_stress, model)
+    data_fit = rh.modelpredict(data_stress, best_model)
 
     measured_time = rh.gettime(data_smooth)
     measured_strain = rh.getstrain(data_smooth)
@@ -169,7 +194,7 @@ def rheos_fract_maxwell(filename, filepath):
     fig.savefig(filepath + filename + '_rheos.jpeg')
     plt.close(fig)
 
-    return eta, c_beta, beta, model_plasticity
+    return eta, c_beta, beta, model_plasticity, best_optimiser
 
 
 def prediction_learn(filepath, training_force=None, training_duration=None):
@@ -282,6 +307,6 @@ def full_analysis(filename, filepath):
 
     peak_force = force_magnitude(x_mean_force[end_index], y_mean_force[end_index])
 
-    eta, c_beta, beta, model_plasticity = rheos_fract_maxwell(filename, filepath)
+    eta, c_beta, beta, model_plasticity, best_optimiser = rheos_fract_maxwell(filename, filepath)
 
-    return peak_deformation, peak_force, residual_deformation, model_plasticity, eta, c_beta, beta
+    return peak_deformation, peak_force, residual_deformation, model_plasticity, eta, c_beta, beta, best_optimiser

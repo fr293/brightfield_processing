@@ -59,7 +59,7 @@ except IOError:
 with open(output_filepath + 'experiment_analysis.csv', 'wb') as f:
     writer = csv.writer(f)
     writer.writerow(['Run Name', 'Peak Deformation', 'Peak Force', 'Residual Deformation', 'Model Plasticity', 'Eta',
-                     'C Beta', 'Beta'])
+                     'C Beta', 'Beta', 'Optimiser'])
 
 # file mode 'wb' will overwrite file contents if one exists
 with open(output_filepath + 'consistency_analysis.csv', 'wb') as f:
