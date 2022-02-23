@@ -13,9 +13,10 @@ from matplotlib.patches import Arrow, Circle
 from tqdm import tqdm
 import GP_force_predictor as forcePredict
 import re
+
 matplotlib.use('TkAgg')
 
-cropsize = 1000
+cropsize = 750
 cropsize_tracking = 300
 blobsize = 40
 gamma_adjust = 0.7
@@ -32,7 +33,7 @@ n_water = 1.333
 
 
 def round_odd(number):
-    return int(2*np.floor(number/2)+1)
+    return int(2 * np.floor(number / 2) + 1)
 
 
 def centercrop(image, crop_dimension):
@@ -102,8 +103,8 @@ def computestrain(position_stack, force_stack):
             if np.abs(dotted_distance_stack[k]) == 0:
                 alignment_ratio[k] = 0
             else:
-                alignment_ratio[k] = s*(np.sqrt(np.linalg.norm(position_stack_incremental[k, :2])**2
-                                                - dotted_distance_stack[k]**2))/np.abs(dotted_distance_stack[k])
+                alignment_ratio[k] = s * (np.sqrt(np.linalg.norm(position_stack_incremental[k, :2]) ** 2
+                                                  - dotted_distance_stack[k] ** 2)) / np.abs(dotted_distance_stack[k])
 
     dotted_distance_stack = np.cumsum(dotted_distance_stack, axis=0)
 
@@ -195,20 +196,20 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     force_mask = np.zeros([length, 1])
     # make starting time the datum
     time_stack = time_stack - time_stack[0]
-    z_measured = (z_values[0]-z_values[1])*1000
-    z_actual = 500 - (((1 - (n_water/n_glass))*200) + n_water*z_measured)
+    z_measured = (z_values[0] - z_values[1]) * 1000
+    z_actual = 500 - (((1 - (n_water / n_glass)) * 200) + n_water * z_measured)
 
     # Initial blob finder The values in the morphological filters are dependent on the image size, which is resized
     # here to 0.5 its original dimension
     image, corner = centercrop(image_stack[0, :, :], cropsize)
     x, y, image_thresh = locator(image)
-    position_stack[0, 0:2] = np.array([x+corner[0], y+corner[1]])
+    position_stack[0, 0:2] = np.array([x + corner[0], y + corner[1]])
 
     # Use previous blob location to inform where to look next
     for i in tqdm(range(1, length)):
         image, corner = trackingcrop(image_stack[i, :, :], cropsize_tracking, position_stack[i - 1, :2])
         x, y, image_thresh = locator(image)
-        position_stack[i, 0:2] = np.array([x+corner[0], y+corner[1]])
+        position_stack[i, 0:2] = np.array([x + corner[0], y + corner[1]])
 
     # add in the z coordinate, and scale the plane coordinates by the hardware factor
     position_stack[:, 2] = z_actual
@@ -250,22 +251,24 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     ax2.imshow(plotting_image, interpolation='nearest')
     ax2.axis('off')
     ax2.set_aspect('equal')
-    (a, b, c) = position_stack[length-1, :]
+    (a, b, c) = position_stack[length - 1, :]
     im_x = int((a / vimba_scale_factor) + width_offset - corner[0])
     im_y = int((b / vimba_scale_factor) + height_offset - corner[1])
-    circ = Circle((im_x, im_y), blobsize/2, color='red', linewidth=2, fill=False)
-    arrow = Arrow(im_x, im_y, 100 * force_stack[length-1, 0], 100 * force_stack[length-1, 1], width=30, color='black')
+    circ = Circle((im_x, im_y), blobsize / 2, color='red', linewidth=2, fill=False)
+    arrow = Arrow(im_x, im_y, 100 * force_stack[length - 1, 0], 100 * force_stack[length - 1, 1], width=30,
+                  color='black')
     ax2.add_patch(circ)
     ax2.add_patch(arrow)
-    ax2.scatter(x=(position_stack[0:length-1, 0] / vimba_scale_factor) + width_offset - corner[0],
-                y=position_stack[0:length-1, 1] / vimba_scale_factor + height_offset - corner[1], c='orange', s=10)
+    ax2.scatter(x=(position_stack[0:length - 1, 0] / vimba_scale_factor) + width_offset - corner[0],
+                y=position_stack[0:length - 1, 1] / vimba_scale_factor + height_offset - corner[1], c='orange', s=10)
 
     # this axis plots the strain in the direction of the force, the strain normal to the force
     # and the force magnitude
     ax3.cla()
     ax3.set_xlim([0, time_stack[length - 1]])
-    ax3.set_ylim([-1, 1.1 * np.amax(eigendisplacement[0:length-1])])
-    ax3.plot(time_stack[0:length-1], eigendisplacement[0:length-1], color='blue', linewidth=2, label='creep distance')
+    ax3.set_ylim([-1, 1.1 * np.amax(eigendisplacement[0:length - 1])])
+    ax3.plot(time_stack[0:length - 1], eigendisplacement[0:length - 1], color='blue', linewidth=2,
+             label='creep distance')
 
     ax3.set_ylabel('Bead Displacement/um')
     ax3.set_xlabel('Time/s')
@@ -276,7 +279,7 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
     ax4.set_xlabel('Time/s')
     ax4.set_ylabel('Force/nN')
     ax4.plot(time_stack[0:length - 1], eigenforce[0:length - 1], color='black', linewidth=2, label='force magnitude')
-    ax4.set_ylim(0, 1.1*np.max(eigenforce[0:length - 1]))
+    ax4.set_ylim(0, 1.1 * np.max(eigenforce[0:length - 1]))
 
     plt.savefig(output_filepath + image_filename + '.jpeg')
     plt.close(fig)
@@ -285,7 +288,7 @@ def findblobstack(image_filename, image_filepath, output_filepath, ca, cc):
 
 
 def thresholding_matrix():
-#    image_stack = imageio.volread('D:\sync_folder\experiments_DNA_Brushes\A_series_2uM\\brightfield\A1\A1_E_0A1_10.tiff')
+    #    image_stack = imageio.volread('D:\sync_folder\experiments_DNA_Brushes\A_series_2uM\\brightfield\A1\A1_E_0A1_10.tiff')
     image_stack = imageio.volread('D:\\sync_folder\\experiments_DNA_Brushes'
                                   '\\B_series_0uM2\\brightfield\\B1\\B1_E_0A2_30.tiff')
 
@@ -310,7 +313,7 @@ def thresholding_matrix():
             remove_small_objects(image_thresh, min_size=np.floor(object_threshold_area / resize_factor ** 2),
                                  in_place=True)
             x, y = findblob(image_thresh, 40 / resize_factor)
-            circ = Circle((x+475, y+475), 40 / 2, color='red', linewidth=2, fill=False)
+            circ = Circle((x + 475, y + 475), 40 / 2, color='red', linewidth=2, fill=False)
 
             ax[i, j].imshow(image_thresh)
             ax[i, j].add_patch(circ)
