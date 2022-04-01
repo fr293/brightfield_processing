@@ -17,10 +17,10 @@ timeout = 30
 def read_data(filepath):
     data = np.genfromtxt(filepath, dtype=float, delimiter=',', skip_header=1)
     exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, \
-    z_mean_force, eigenforce, force_on = data.T
+        z_mean_force, eigenforce, force_on = data.T
 
     return exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, \
-           z_mean_force, eigenforce, force_on
+        z_mean_force, eigenforce, force_on
 
 
 def read_analysis(filepath):
@@ -297,7 +297,7 @@ def prediction_run(mean, cov, filename, filepath, n=1000):
 
 def full_analysis(filename, filepath):
     exp_time, position_x, position_y, position_z, displacement, alignment_ratio, x_mean_force, y_mean_force, \
-    z_mean_force, eigenforce, force_on = read_data(filepath + filename + '_full.csv')
+        z_mean_force, eigenforce, force_on = read_data(filepath + filename + '_full.csv')
 
     start_index, end_index = force_switch_indices(force_on)
 

@@ -122,7 +122,7 @@ def gp_model(path, filename, no):
 
 
 # function to predict value
-def prediction(location_array, gpx, gpy, gpz, linx, liny, linz):
+def gp_prediction(location_array, gpx, gpy, gpz, linx, liny, linz):
 
     mx = np.array(gpx.predict(location_array, return_std=True), ndmin=2).T
     my = np.array(gpy.predict(location_array, return_std=True), ndmin=2).T
@@ -148,15 +148,19 @@ def lin_prediction(location_array, linx, liny, linz):
 
     return magnitudes
 
-def sweep_load(ca, cc):
+
+def sweep_load_gp(ca, cc):
     # ca is the current magnitude index, going from 1-9
     # cc is the direction index, going from 1-4
 
     print('loading force data...')
     print('loading: config ' + str(cc) + ', amplitude ' + str(ca))
-    predictor_array_x = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'x.pkl')
-    predictor_array_y = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'y.pkl')
-    predictor_array_z = joblib.load('D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'z.pkl')
+    predictor_array_x = joblib.load(
+        'D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'x.pkl')
+    predictor_array_y = joblib.load(
+        'D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'y.pkl')
+    predictor_array_z = joblib.load(
+        'D://sweep_data_new/' + str(ca) + '/gp_train_data_sparse_white/config' + str(cc) + 'z.pkl')
 
     return predictor_array_x, predictor_array_y, predictor_array_z
 
@@ -174,43 +178,38 @@ def sweep_load_lin(ca, cc):
 
     return lin_model_x, lin_model_y, lin_model_z
 
+
 def plot_map(ca):
-    # ca is the current magnitude index, going from 1-9
+
+    limit = 400
+    step = 20
     depth = [-100, 0, 100]
+
+    directions = [1, 2, 3, 4]
+    mapping = [3, 1, 0, 2]
+
+    titles = ['West', 'South', 'North', 'East']
+    amplitude_titles = ['0.5A', '1.0A', '1.5A', '2.0A', '2.5A', '0.1A', '0.2A', '0.3A', '0.4A']
+
     for d in depth:
-        directions = [1, 2, 3, 4]
-        mapping = [3, 1, 0, 2]
-        amplitude_titles = ['0.5A', '1.0A', '1.5A', '2.0A', '2.5A', '0.1A', '0.2A', '0.3A', '0.4A']
-
-        # fig = plt.figure()
-        # ax = plt.subplot2grid((2, 2), (0, 0))
-        # ax2 = plt.subplot2grid((2, 2), (0, 1))
-        # ax3 = plt.subplot2grid((2, 2), (1, 0))
-        # ax4 = plt.subplot2grid((2, 2), (1, 1))
-        # axes = [ax4, ax2, ax, ax3]
-        fig1, axs1 = plt.subplots(2, 2)
-        fig2, axs2 = plt.subplots(2, 2)
-        axes1 = axs1.flat
-        axes2 = axs2.flat
-
-        limit = 400
-        step = 20
-
-        titles = ['West', 'South', 'North', 'East']
-        fig1.suptitle('Force CoV Maps for Current Magnitude ' + amplitude_titles[ca-1])
-        fig2.suptitle('Force Magnitude Maps for Current Magnitude ' + amplitude_titles[ca - 1])
+        # create mesh to generate forces on
+        plane = np.mgrid[-limit:limit + step:step, -limit:limit + step:step, d:d + 1]
+        plane = plane.reshape(3, -1).T
 
         for direction in directions:
-            predictor_array_x, predictor_array_y, predictor_array_z, lin_model_x, lin_model_y, lin_model_z\
-                = sweep_load(ca, direction)
-            map = np.mgrid[-limit:limit+step:step, -limit:limit+step:step, d:d + 1]
-            map = map.reshape(3, -1).T
-            magnitudes, deviations = lin_prediction(map, predictor_array_x, predictor_array_y, predictor_array_z,
+            # maps the order of the plots to the configurations
+            index = mapping[direction - 1]
+
+            lin_model_x, lin_model_y, lin_model_z = sweep_load_lin(ca, direction)
+
+            predictor_array_x, predictor_array_y, predictor_array_z = sweep_load_gp(ca, direction)
+
+            lin_magnitudes = lin_prediction(plane, lin_model_x, lin_model_y, lin_model_z)
+
+            gp_magnitudes, gp_deviations = gp_prediction(plane, predictor_array_x, predictor_array_y, predictor_array_z,
                                                 lin_model_x, lin_model_y, lin_model_z)
 
-            # coefficient of variation plots
-
-            covs = np.abs(deviations/magnitudes)
+            covs = np.abs(gp_deviations/gp_magnitudes)
             covs[covs >= 1] = 1
 
             cov_x = covs[:, 0].reshape(41, 41, order='F')
@@ -218,61 +217,66 @@ def plot_map(ca):
             cov_z = covs[:, 2].reshape(41, 41, order='F')
             cov_image = np.stack((cov_x, cov_y, cov_z), 2)
 
-            index = mapping[direction - 1]
+            fig1, axs1 = plt.subplots(2, 2)
+            fig2, axs2 = plt.subplots(2, 2)
+            fig3, axs3 = plt.subplots(2, 2)
+            # iterators for the axes
+            axes1 = axs1.flat
+            axes2 = axs2.flat
+            axes3 = axs3.flat
+
+            fig1.suptitle('Force CoV Maps for Current Magnitude ' + amplitude_titles[ca - 1])
+            fig2.suptitle('Force Magnitude Maps for Current Magnitude ' + amplitude_titles[ca - 1])
+            fig3.suptitle('Force Magnitude Maps for Current Magnitude ' + amplitude_titles[ca - 1])
+
             axes1[index].set_title(titles[direction-1])
             axes1[index].imshow(cov_image)
+            scalebar = AnchoredSizeBar(axes1[index].transData, 10, '200 um', 'lower right', pad=0.1, color='grey',
+                                       frameon=False, size_vertical=1, fontproperties=fontprops)
             axes1[index].axis('off')
             axes1[index].set_aspect('equal')
-
-            scalebar = AnchoredSizeBar(axes1[index].transData,
-                                       10, '100 um', 'lower right',
-                                       pad=0.1,
-                                       color='grey',
-                                       frameon=False,
-                                       size_vertical=1,
-                                       fontproperties=fontprops)
-
             axes1[index].add_artist(scalebar)
-
-            fig1.savefig('D:\\sweep_data_new\\' + str(ca) + '\\variation_plot_' + str(d) + '_micron.svg', format='svg')
-            plt.close(fig1)
 
             # magnitude plots
 
-            mags = np.abs(magnitudes)
-            max_force = np.amax(mags)
-            mags = mags/max_force
+            # mags = np.abs(magnitudes)
+            # max_force = np.amax(mags)
+            # mags = mags/max_force
+            #
+            # [central_force, devs] = lin_prediction([[0, 0, 0]], predictor_array_x, predictor_array_y, predictor_array_z,
+            #                lin_model_x, lin_model_y, lin_model_z)
+            #
+            # central_force_x = central_force[0, 0]
+            # central_force_y = central_force[0, 1]
+            # central_mag = np.sqrt((central_force_x**2)+(central_force_y**2))
+            # central_angle = np.degrees(np.arctan(central_force_y/central_force_x))
+            #
+            # mag_x = mags[:, 0].reshape(41, 41, order='F')
+            # mag_y = mags[:, 1].reshape(41, 41, order='F')
+            # mag_z = mags[:, 2].reshape(41, 41, order='F')
+            # mag_image = np.stack((mag_x, mag_y, mag_z), 2)
+            #
+            # axes2[index].set_title(titles[direction-1] + ': $F_{central}$ = ' + format(central_mag, '.2f') + 'nN' +
+            #                        ' $\measuredangle$ ' + format(central_angle, '.2f') + '$^\circ$', fontsize=9)
+            # axes2[index].imshow(mag_image)
+            # axes2[index].axis('off')
 
-            [central_force, devs] = lin_prediction([[0, 0, 0]], predictor_array_x, predictor_array_y, predictor_array_z,
-                           lin_model_x, lin_model_y, lin_model_z)
-
-            central_force_x = central_force[0, 0]
-            central_force_y = central_force[0, 1]
-            central_mag = np.sqrt((central_force_x**2)+(central_force_y**2))
-            central_angle = np.degrees(np.arctan(central_force_y/central_force_x))
-
-            mag_x = mags[:, 0].reshape(41, 41, order='F')
-            mag_y = mags[:, 1].reshape(41, 41, order='F')
-            mag_z = mags[:, 2].reshape(41, 41, order='F')
-            mag_image = np.stack((mag_x, mag_y, mag_z), 2)
-
-            axes2[index].set_title(titles[direction-1] + ': $F_{central}$ = ' + format(central_mag, '.2f') + 'nN' +
-                                   ' $\measuredangle$ ' + format(central_angle, '.2f') + '$^\circ$', fontsize=9)
-            axes2[index].imshow(mag_image)
-            axes2[index].axis('off')
+            axes2[index].quiver(plane[:, 0], plane[:, 1], lin_magnitudes[:, 0], lin_magnitudes[:, 1],
+                                lin_magnitudes[:, 2], cmap='Blues')
             axes2[index].set_aspect('equal')
 
-            scalebar = AnchoredSizeBar(axes2[index].transData,
-                                       10, '200 um', 'lower right',
-                                       pad=0.1,
-                                       color='grey',
-                                       frameon=False,
-                                       size_vertical=1,
-                                       fontproperties=fontprops)
+            axes3[index].quiver(plane[:, 0], plane[:, 1], gp_magnitudes[:, 0], gp_magnitudes[:, 1],
+                                gp_magnitudes[:, 2], cmap='Blues')
+            axes3[index].set_aspect('equal')
 
-            axes2[index].add_artist(scalebar)
+            fig1.savefig('D:\\sweep_data_new\\' + str(ca) + '\\variation_plot_' + str(d) + '_micron.eps', format='eps')
+            fig2.savefig('D:\\sweep_data_new\\' + str(ca) + '\\magnitude_plot_lin_' + str(d) + '_micron.eps',
+                         format='eps')
+            fig3.savefig('D:\\sweep_data_new\\' + str(ca) + '\\magnitude_plot_gp_' + str(d) + '_micron.eps',
+                         format='eps')
 
-            fig2.savefig('D:\\sweep_data_new\\' + str(ca) + '\\magnitude_plot_' + str(d) + '_micron.svg', format='svg')
+            plt.close(fig1)
+            plt.close(fig2)
             plt.close(fig2)
 
 
